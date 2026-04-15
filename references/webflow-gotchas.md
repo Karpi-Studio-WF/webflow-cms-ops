@@ -1,0 +1,165 @@
+# Webflow CMS Data API: The Seven Gotchas
+
+Read this when:
+
+- A push succeeds at the API level but content looks wrong in the editor or on the rendered page.
+- The Data API returns success codes but an automated check flags content as missing.
+- You're about to start a bulk operation and want to avoid known failure modes.
+
+Each entry below is a production failure we hit. Symptoms, cause, fix.
+
+## 1. `<table>` tags silently stripped
+
+**Symptom:** Markdown tables show as empty blank space on the rendered page. No error in the push response.
+
+**Cause:** Webflow's RichText field strips unsupported HTML tags on ingestion. `<table>`, `<script>`, `<iframe>`, `<form>`, and custom embed markup are all dropped. The API accepts the payload and returns 200; the stored content is missing the tables.
+
+**Fix:** Convert every markdown table to a bullet list before rendering to HTML. For a type overview's field reference table:
+
+Before:
+
+```markdown
+| Field | Description |
+|-------|-------------|
+| [name](/url) | What it does |
+```
+
+After:
+
+```markdown
+- [**name**](/url) — What it does
+```
+
+Use the em dash `—` between label and value. For term articles with `| Source | Where to look |` patterns, use `- **Source** — Where to look`.
+
+**Caveat:** If your design requires actual `<table>` rendering (styling, borders, responsive behavior), do it in the page template via custom code, not in the CMS body. The CMS body cannot host tables.
+
+## 2. Whitespace between list tags drops children
+
+**Symptom:** `<ul>`/`<ol>` headings appear on the page but the list items are missing. Sections under `### Required`, `### Recommended`, etc., look empty. API GET echoes back the HTML with the list items present, making the bug invisible through automated checks.
+
+**Cause:** Webflow's RichText parser treats whitespace between `<ul>`, `<li>`, and `</ul>` as content boundaries and silently drops the list children. The Python `markdown` library's default output has these newlines, so every HTML push produced by it will trigger this bug.
+
+The two HTML variants:
+
+```html
+<!-- What Python markdown produces — BREAKS -->
+<ul>
+<li>Item one</li>
+<li>Item two</li>
+</ul>
+
+<!-- What Webflow expects — WORKS -->
+<ul><li>Item one</li><li>Item two</li></ul>
+```
+
+**How to diagnose:** Open the affected item in the Webflow CMS editor. If the editor shows empty sections for lists, you have this bug. Confirm by manually typing a bullet list in the editor, saving, then GET'ing the item — Webflow's stored HTML has no whitespace between tags.
+
+**Fix:** Run every HTML payload through a compact helper before pushing:
+
+```python
+import re
+
+def compact(html):
+    """Strip whitespace between block tags; preserve <pre> block contents."""
+    out, i = [], 0
+    while i < len(html):
+        pre = re.search(r'<pre[^>]*>[\s\S]*?</pre>', html[i:])
+        if pre:
+            out.append(re.sub(r'>\s+<', '><', html[i:i + pre.start()]))
+            out.append(pre.group(0))
+            i += pre.end()
+        else:
+            out.append(re.sub(r'>\s+<', '><', html[i:]))
+            break
+    return ''.join(out)
+```
+
+The `<pre>` preservation matters — JSON-LD code examples need their internal whitespace intact for readability.
+
+This bug is NOT documented in Webflow's API docs. We found it by manually typing content in the editor, inspecting the API response, and comparing to what we had been pushing.
+
+## 3. macOS Python has no system cert bundle
+
+**Symptom:** Every Webflow API call fails with `urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1002)`.
+
+**Cause:** Python installed via the official installer, Homebrew, or pyenv on macOS does not ship with the system's CA certificates. The default `ssl.create_default_context()` can't verify HTTPS certs.
+
+**Fix:** Install `certifi` and point the SSL context at its bundle:
+
+```bash
+pip3 install certifi
+```
+
+```python
+import ssl, certifi
+ctx = ssl.create_default_context(cafile=certifi.where())
+```
+
+Use `ctx` on every `urlopen()` call. Harmless on Linux where the default context already works.
+
+## 4. Soft-deleted slugs reserve permanently
+
+**Symptom:** You delete a CMS item in the Designer, then try to import or create a new item with the same slug. Webflow creates it with a suffixed slug like `product-62276` or rejects the operation.
+
+**Cause:** Webflow's "delete" is a soft-delete. The item moves to a trash state but its slug remains reserved indefinitely. There is no UI or API call to release the slug.
+
+**Fix if already hit:** Create a new collection with final names and slugs, migrate items via API, update every internal link in every article that referenced the old URLs.
+
+**Avoid:** Lock the collection structure before any bulk content import. Choose production names and slugs on day one. Do not rename collections mid-project.
+
+## 5. MultiReference fields can't change their target collection
+
+**Symptom:** You created a MultiReference field on Collection A pointing to Collection B. You need to replace B with B'. The reference field still points to B.
+
+**Cause:** Webflow's API does not allow retargeting a reference field. The Designer doesn't either.
+
+**Fix:** Delete the MultiReference field. Create a new one pointing to B'. Re-populate every item's references.
+
+**Avoid:** Same as #4. Design the collection graph before content creation.
+
+## 6. Background Claude Code agents deadlock on permission prompts
+
+**Symptom:** A background agent using the Webflow MCP stops responding. The foreground session shows no errors. Logs are empty.
+
+**Cause:** The Webflow MCP requires user approval for tool calls. The approval dialog can only reach the foreground Claude Code session. A background agent has no UI surface to prompt into. The tool call hangs forever, the agent halts.
+
+**Fix:** Never run Webflow MCP operations from a background agent. Run them from:
+
+- A foreground agent (the agent the user is actively chatting with).
+- A Python script (no MCP involvement).
+- A `bash` invocation with `run_in_background` for the Python script, not the agent itself.
+
+## 7. The Data API GET lies about RichText
+
+**Symptom:** You push HTML to a RichText field. The API returns 200. A subsequent GET returns the HTML you pushed. You assume content landed correctly. But the CMS editor and the live page show empty sections.
+
+**Cause:** Webflow RichText has two internal representations:
+
+- **HTML source:** what you pushed. Returned on API GET.
+- **Node tree:** Webflow's internal block structure. What the editor edits and the rendered page serves.
+
+When Webflow's parser fails to build nodes from your HTML (due to #1 or #2 above, or any other unsupported construct), the HTML source is retained but the node tree is empty. The API GET still returns your pushed HTML, so automated checks pass. Visual inspection fails.
+
+**Fix:** Always verify visually after a push. Minimum:
+
+- Open 3 affected items in the CMS editor and confirm content renders.
+- Or fetch the rendered live URL and grep for expected elements.
+
+Do not trust the API response as evidence that the editor or live page shows the content.
+
+This is the most expensive gotcha in the set. It wasted one debugging session where an automated pipeline reported success while the rendered site was empty.
+
+## Related behaviors (not quite gotchas)
+
+### Rate limiting
+
+150 req/min hard cap per token. Using `time.sleep(0.5)` between requests = 120 req/min with headroom. If the token is shared with other clients (e.g., a production app), reduce to 0.75s or 1s.
+
+### Item publish state
+
+PATCH updates go to the staged draft. The item's `lastPublished` timestamp updates only when the site is published (via Designer) or items are published via `POST /v2/collections/{id}/items/publish`. The `.webflow.io` URL serves the last-published version, so unpublished changes won't appear there until a publish event.
+
+### Field slug mismatches
+
+Field slugs differ from display names: "Meta Description" → `meta-description`. "Body" may be `body` or `body-2` depending on when it was created. Pushing to a non-existent field slug returns 200 but does nothing. Verify slugs by GET'ing one item and inspecting `fieldData` keys before pushing.
