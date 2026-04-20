@@ -4,12 +4,13 @@ A Claude skill for bulk-publishing and editorial fix passes on Webflow CMS. Buil
 
 ## What this is
 
-A single Claude skill that covers two related content operations on Webflow CMS:
+A single Claude skill that covers three related content operations on Webflow CMS:
 
 - **Bulk push** — send new or updated content from a local source (SQLite, markdown, CSV) to a Webflow CMS collection at scale, beyond what the MCP or Designer handle well.
 - **Editorial fix pass** — run a targeted rewrite across existing items (strip a phrase, remove meta-content leaks, swap a heading, rewrite formulaic openers) as a repeatable, resume-safe, rollback-friendly sweep.
+- **Vision pipeline** — bulk-generate content from binary assets (alt text from images, summaries from PDFs, image categorization) and push back as field updates, including the multi-image field array schema.
 
-The skill handles the seven known gotchas that waste a first-time user's first production session: macOS SSL cert issues, the Webflow RichText whitespace-between-tags parser bug, slug soft-delete traps, background agent deadlocks, and more. Each is documented with symptoms and fixes in `references/webflow-gotchas.md`.
+The skill handles the eight known gotchas that waste a first-time user's first production session: macOS SSL cert issues, the Webflow RichText whitespace-between-tags parser bug, slug soft-delete traps, background agent deadlocks, the 32MB request cap on cumulative image Reads, and more. Each is documented with symptoms and fixes in `references/webflow-gotchas.md`.
 
 ## Structure
 
@@ -17,9 +18,11 @@ The skill handles the seven known gotchas that waste a first-time user's first p
 webflow-cms-ops/
 ├── SKILL.md                         ← entry point, always loaded
 ├── references/
-│   ├── push-pattern.md              ← bulk push pattern, full push loop
+│   ├── push-pattern.md              ← bulk push pattern, full push loop, multi-image field PATCH
 │   ├── fix-pass-pattern.md          ← six-step editorial fix pattern
-│   └── webflow-gotchas.md           ← seven gotchas with symptoms and fixes
+│   ├── webflow-gotchas.md           ← eight gotchas with symptoms and fixes
+│   ├── vision-pipeline.md           ← bulk content generation from binaries (alt text, summaries)
+│   └── session-handoff.md           ← split a heavy batch across two chats via filesystem
 ├── scripts/
 │   ├── compact.py                   ← HTML compact helper (required before every push)
 │   └── push_template.py             ← standalone runnable push script

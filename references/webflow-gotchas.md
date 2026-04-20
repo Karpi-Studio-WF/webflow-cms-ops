@@ -150,6 +150,35 @@ Do not trust the API response as evidence that the editor or live page shows the
 
 This is the most expensive gotcha in the set. It wasted one debugging session where an automated pipeline reported success while the rendered site was empty.
 
+## 8. The 32MB request cap when reading binaries in-session
+
+**Symptom:** A long-running batch task that reads many binary files (images, PDFs) succeeds for the first ~200 items, then any further tool call — even one that doesn't read a file — fails with `Request too large (max 32MB). Try with a smaller file.` The script's results on disk up to that point are intact, but the agent in the session cannot make any further requests.
+
+**Cause:** Anthropic's API enforces a 32MB cap on the size of a single request payload. Every Claude tool call sends a request that includes the entire conversation history up to that point — every prior message, every prior tool result. When a tool result contains a binary (e.g., a 150KB JPEG read via the Read tool), that binary embeds permanently into history. Each subsequent turn's request re-sends every prior binary. At ~200 binaries × 150KB = 30MB, the next request crosses the cap.
+
+The wall is invisible until it hits. Saving intermediate results to disk does NOT free the bytes — disk writes do not shrink conversation history. Splitting the work into more user messages does NOT help — every message's request still carries every binary previously Read in this session.
+
+**Diagnosis:**
+
+- The error message says `Request too large` or `max 32MB`
+- You've Read more than ~150 binary files larger than 100KB each in the current session
+
+**Fix (after hitting the wall):**
+
+1. Existing results in your output file are intact. The resume mechanism (if any) can pick up.
+2. Open a fresh Claude chat — the new session has a fresh budget.
+3. For the rest of the batch, switch to one of:
+   - `references/vision-pipeline.md` Pattern B (parallel subagents) for medium batches
+   - `references/session-handoff.md` for large batches or when you want to step away
+
+**Avoid (before starting):**
+
+- Estimate the batch size: `total_binaries × average_size_KB`. If the product exceeds 25MB (32MB minus safety margin), do NOT inline.
+- For batches > 100 binaries, use subagents or the handoff pattern from the start.
+- See principle #8 in `SKILL.md` for the routing logic.
+
+This is the most expensive gotcha in the set when you're new to vision-batch work — partial runs of 200+ items can take an hour to discover the wall, and the partial work is wasted unless you had resume tracking in place from the start.
+
 ## Related behaviors (not quite gotchas)
 
 ### Rate limiting

@@ -14,12 +14,15 @@ Route based on the request. Read only the reference(s) needed for the specific t
 - **User wants to push content TO Webflow** (new content, updated content, from markdown/DB/CSV) → read `references/push-pattern.md`.
 - **User wants to run an editorial FIX across existing content** (strip a phrase, remove meta leaks, swap headings, bulk regex rewrite) → read `references/fix-pass-pattern.md`.
 - **User hits a weird Webflow RichText behavior** (empty sections, stripped content, parser mysteries, list items that vanish) → read `references/webflow-gotchas.md`.
+- **User wants to BULK-GENERATE content from binaries via Claude** (alt text from images, summaries from PDFs, image categorization, screenshot QA — anything where Claude must SEE the file to produce the output) → read `references/vision-pipeline.md`.
+- **User needs to populate or update alt text on a Webflow multi-image field** (set-of-images, gallery, carousel — each image in the array has its own alt) → read `references/vision-pipeline.md` if alts need to be generated from looking at the images, OR `references/push-pattern.md#patching-multi-image-fields` if alts already exist and only need pushing.
+- **User has a heavy Claude batch that won't fit in one session, OR wants the batch to run async while they do other work** → read `references/session-handoff.md`.
 
 Multiple references may apply to one task. For example, running a fix pass uses both `fix-pass-pattern.md` and `push-pattern.md` (the fix pass ends with a push step).
 
 ## Principles that apply to every push and every fix pass
 
-All seven are non-negotiable. Each exists because skipping it caused a production failure we've hit.
+All eight are non-negotiable. Each exists because skipping it caused a production failure we've hit.
 
 ### 1. `certifi.where()` for SSL context
 
@@ -78,14 +81,28 @@ Verify at least 3 items per push:
 
 Permission prompts for MCP tool calls cannot reach background agents; they deadlock. Run push scripts from the foreground, a terminal, or a `bash` invocation with `run_in_background` for the Python script itself (not the agent).
 
+### 8. Estimate context budget before starting; never inline a vision-batch above 100 items
+
+Reading binary files (images, PDFs) into the conversation embeds the bytes permanently into history. Every subsequent turn's API request re-sends the full history. Around 200 binary Reads, the cumulative payload exceeds Anthropic's 32MB per-request cap and any further tool call fails — even one that doesn't read a file. The wall is invisible until it hits, and partial work is wasted unless you had per-item resume tracking from the start. Disk writes do not free the bytes; splitting into more user messages does not help. See `references/webflow-gotchas.md#8` for the full diagnosis.
+
+Routing for batches where Claude GENERATES content from binaries (vision-based alt text, image classification, PDF summarization):
+
+- **< 100 items:** inline is fine, one item per turn (`vision-pipeline.md` Pattern A)
+- **100–800 items:** parallel subagents — each gets a fresh 32MB budget, returns text-only summaries to parent (`vision-pipeline.md` Pattern B)
+- **> 800 items, OR user wants to step away while it runs, OR simplicity matters more than speed:** hand off to a fresh chat via `.handoff/` files (`session-handoff.md`)
+
+Estimate before starting: `total_binaries × average_size_KB`. If that product exceeds 25MB (32MB minus safety margin), do NOT inline. Pick the next-larger pattern.
+
 ## Files in this skill
 
 ```
 SKILL.md                              ← this file (always loaded)
 references/
-  push-pattern.md                     ← bulk push pattern, full push loop
+  push-pattern.md                     ← bulk push pattern, full push loop, multi-image field PATCH
   fix-pass-pattern.md                 ← six-step editorial fix pattern
-  webflow-gotchas.md                  ← the seven gotchas with symptoms and fixes
+  webflow-gotchas.md                  ← the eight gotchas with symptoms and fixes
+  vision-pipeline.md                  ← bulk content generation from binaries (alt text, summaries, categorization)
+  session-handoff.md                  ← split a heavy batch across two chats via filesystem
 scripts/
   compact.py                          ← HTML compact helper (required before every push)
   push_template.py                    ← standalone runnable push script, edit config and run
@@ -96,7 +113,7 @@ examples/
 ## Rules
 
 1. Read only the reference(s) matching the user's task. Do not read all three upfront.
-2. Follow the seven principles regardless of which pattern you're running.
+2. Follow the eight principles regardless of which pattern you're running.
 3. Verify visually after every push. The API will lie to you otherwise.
 4. One fix per fix-pass, never batch multiple fixes into a single pass.
 
