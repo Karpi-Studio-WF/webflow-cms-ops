@@ -86,8 +86,8 @@ This skill and its scripts are the result of solving each of those problems in p
 
 Deep-dive write-ups of the patterns in this skill:
 
-- [How to Bulk-Publish Content to Webflow CMS With Python and Claude Code](https://karpi.studio/resources/how-to-bulk-publish-webflow-cms) — the technical playbook, with code walkthroughs for every step.
-- [How We Built a 281-Article Schema Glossary Using Claude Code](https://karpi.studio/resources/how-we-built-the-schema-glossary) — the case study that produced this toolkit, including the debugging arc that uncovered each gotcha.
+- [How to Bulk-Publish Content to Webflow CMS With Python and Claude Code](https://www.karpi.studio/blog/bulk-publish-webflow-cms-python-claude-code) — the technical playbook, with code walkthroughs for every step.
+- [How We Built a 281-Article Schema Glossary Using Claude Code](https://www.karpi.studio/blog/223-schema-articles-claude-code) — the case study that produced this toolkit, including the debugging arc that uncovered each gotcha.
 
 ## Contributing
 
