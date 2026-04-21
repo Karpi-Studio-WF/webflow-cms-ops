@@ -84,7 +84,7 @@ Split heavy batches across two chat sessions when the 32MB request cap is near. 
 - **Auth:** Bearer token — never commit tokens; set in the CONFIG block of scripts
 - **Rate limit:** 150 req/min; scripts enforce 0.5s delay
 - **RichText field slug:** Often `body`, but may be `body-2` — verify by fetching one live item and inspecting `fieldData` keys
-- **Tables are stripped silently** — convert `<table>` to bullet lists before rendering to HTML
+- **Markdown table syntax doesn't work** — use HTML `<table>` directly; it renders fine in RichText (see `references/webflow-richtext-tables.md`)
 - **Multi-image field PATCH:** Must spread `**img` to preserve `fileId` and `url`; only override the target field
 
 ## Expected SQLite Schema
