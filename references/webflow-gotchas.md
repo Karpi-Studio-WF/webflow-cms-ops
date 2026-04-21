@@ -8,31 +8,24 @@ Read this when:
 
 Each entry below is a production failure we hit. Symptoms, cause, fix.
 
-## 1. `<table>` tags silently stripped
+## 1. Markdown table syntax doesn't work — use HTML `<table>` instead
 
-**Symptom:** Markdown tables show as empty blank space on the rendered page. No error in the push response.
+**Symptom:** Markdown tables (`| col | col |` syntax) show as empty blank space on the rendered page. No error in the push response.
 
-**Cause:** Webflow's RichText field strips unsupported HTML tags on ingestion. `<table>`, `<script>`, `<iframe>`, `<form>`, and custom embed markup are all dropped. The API accepts the payload and returns 200; the stored content is missing the tables.
+**Cause:** The Python `markdown` library does not convert GFM pipe tables to HTML by default, so they pass through as raw text and Webflow ignores them.
 
-**Fix:** Convert every markdown table to a bullet list before rendering to HTML. For a type overview's field reference table:
+**Fix:** Use HTML `<table>` directly. HTML tables work in RichText fields. Pass them inline in the same field string as your other HTML:
 
-Before:
-
-```markdown
-| Field | Description |
-|-------|-------------|
-| [name](/url) | What it does |
+```html
+<table>
+  <thead><tr><th>Field</th><th>Description</th></tr></thead>
+  <tbody><tr><td>name</td><td>What it does</td></tr></tbody>
+</table>
 ```
 
-After:
+Run through `compact.py` like all other RichText HTML before pushing.
 
-```markdown
-- [**name**](/url) — What it does
-```
-
-Use the em dash `—` between label and value. For term articles with `| Source | Where to look |` patterns, use `- **Source** — Where to look`.
-
-**Caveat:** If your design requires actual `<table>` rendering (styling, borders, responsive behavior), do it in the page template via custom code, not in the CMS body. The CMS body cannot host tables.
+**See also:** `references/webflow-richtext-tables.md` for the full pattern, exact API call structure, and a list of mistakes other agents make.
 
 ## 2. Whitespace between list tags drops children
 
