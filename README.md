@@ -99,4 +99,4 @@ MIT. Use freely in commercial and personal projects.
 
 ## Credits
 
-Developed at [Karpi Studio](https://karpi.studio) during the build of the [Schema HQ glossary](https://karpi.studio/resources/schema-glossary).
+Developed at [Karpi Studio](https://www.karpi.studio) during the build of the [Schema HQ glossary](https://www.karpi.studio/resources/schema-glossary).
