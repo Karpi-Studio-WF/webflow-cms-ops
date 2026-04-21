@@ -1,0 +1,102 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What This Project Is
+
+A skill bundle for bulk Webflow CMS operations — pushing articles, running editorial fix passes, and generating content via vision. Production-tested across 281 articles with 796 API writes. It is a reference skill with patterns and scripts, not a deployable application. There is no build step, no test suite, and no CI.
+
+## Running the Scripts
+
+Install Python dependencies for the helper scripts:
+
+```bash
+pip3 install certifi markdown
+```
+
+Run a bulk push (after editing the CONFIG block in the script):
+
+```bash
+python3 scripts/push_template.py
+```
+
+Use `compact.py` as a library, not a standalone command:
+
+```python
+from compact import to_compact_html
+html = to_compact_html(markdown_string)
+```
+
+## Architecture
+
+```
+SKILL.md                     # Entry point — routes tasks to reference patterns
+references/
+  push-pattern.md            # Bulk push workflow (20+ items)
+  fix-pass-pattern.md        # Editorial sweep workflow (10+ items)
+  vision-pipeline.md         # Vision batch generation (alt text, summaries)
+  webflow-gotchas.md         # 8 known failure modes with fixes
+  session-handoff.md         # Multi-chat batching for large jobs
+scripts/
+  compact.py                 # HTML whitespace stripper (required for all RichText pushes)
+  push_template.py           # Standalone push script (edit CONFIG block then run)
+examples/
+  minimal-example.md         # End-to-end walkthrough for 10 markdown files
+```
+
+**How the skill routes:** When invoked, Claude reads `SKILL.md` to identify which pattern matches the task, then reads only the relevant reference document(s).
+
+**Scripts are executed, not read into context.** `compact.py` and `push_template.py` are production utilities — edit the CONFIG block in `push_template.py` and run directly. Do not summarize or inline them.
+
+## The 8 Non-Negotiable Principles
+
+Every push, fix pass, and vision batch follows these. Each exists because it prevented a real production failure:
+
+1. **`certifi.where()` for SSL context** — macOS Python lacks system certs. Always use `ssl.create_default_context(cafile=certifi.where())`.
+2. **Compact HTML before RichText push** — Python's `markdown` outputs `<ul>\n<li>`, and Webflow's parser silently drops list children when whitespace separates block tags. Route all HTML through `compact.py`.
+3. **Absolute DB paths** — Background shells reset `cwd`. Relative paths fail silently in production.
+4. **0.5s delay between API calls** — Webflow allows 150 req/min; 0.5s = 120 req/min with burst headroom.
+5. **Resume-safe progress file** — Track pushed slugs in `/tmp/<task>_progress.txt`. A crash at item 87 restarts at item 88.
+6. **Visual verification after every push** — API GET echoes your HTML back; it does not confirm Webflow rendered it correctly. Open 3+ items in the Webflow editor or on the live page.
+7. **Never run pushes from background Claude Code agents** — Permission prompts cannot reach background agents; they deadlock.
+8. **Estimate context budget before vision batches** — Reading binaries embeds bytes permanently in history. Over ~200 binaries, cumulative payload exceeds Anthropic's 32MB per-request cap.
+
+## Key Patterns
+
+### Bulk Push (push-pattern.md)
+Scope → compact HTML → push loop with resume → visual verify → publish.
+
+### Editorial Fix Pass (fix-pass-pattern.md)
+Identify affected items → write pure `fix(markdown) → markdown` transform → apply to DB → regen HTML for touched items only → push filtered slugs → spot-check 3–5 items.
+
+### Vision Pipeline (vision-pipeline.md)
+Choose pattern by batch size:
+- **< 100 items:** Inline, one per turn.
+- **100–800 items:** Parallel subagents, each processing a chunk in isolated context.
+- **> 800 items:** Handoff to new chat via `.handoff/task.md` and `.handoff/progress.md`.
+
+### Session Handoff (session-handoff.md)
+Split heavy batches across two chat sessions when the 32MB request cap is near. Worker reads `.handoff/task.md`, writes progress to `.handoff/progress.md`, outputs to `.handoff/results.json`.
+
+## Webflow API Details
+
+- **API version:** Data API v2
+- **Auth:** Bearer token — never commit tokens; set in the CONFIG block of scripts
+- **Rate limit:** 150 req/min; scripts enforce 0.5s delay
+- **RichText field slug:** Often `body`, but may be `body-2` — verify by fetching one live item and inspecting `fieldData` keys
+- **Tables are stripped silently** — convert `<table>` to bullet lists before rendering to HTML
+- **Multi-image field PATCH:** Must spread `**img` to preserve `fileId` and `url`; only override the target field
+
+## Expected SQLite Schema
+
+```sql
+CREATE TABLE items (
+    slug TEXT UNIQUE,
+    webflow_id TEXT,
+    body_html TEXT,
+    meta_title TEXT,
+    meta_description TEXT
+);
+```
+
+`push_template.py` targets this schema. Adapt the SELECT query for variations.
