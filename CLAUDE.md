@@ -36,6 +36,7 @@ references/
   fix-pass-pattern.md        # Editorial sweep workflow (10+ items)
   vision-pipeline.md         # Vision batch generation (alt text, summaries)
   webflow-gotchas.md         # 8 known failure modes with fixes
+  webflow-richtext-tables.md # HTML <table> in RichText (markdown tables don't work)
   session-handoff.md         # Multi-chat batching for large jobs
 scripts/
   compact.py                 # HTML whitespace stripper (required for all RichText pushes)
@@ -89,14 +90,18 @@ Split heavy batches across two chat sessions when the 32MB request cap is near. 
 
 ## Expected SQLite Schema
 
+The local SQLite DB is the staging source of truth. `body_md` is the authored markdown; `body_html` is a derived artifact regenerated from it through `compact.py` and is the value actually pushed to the RichText field. A fix pass edits `body_md`, regenerates `body_html` for touched rows only, then pushes.
+
 ```sql
-CREATE TABLE items (
+CREATE TABLE my_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     slug TEXT UNIQUE,
-    webflow_id TEXT,
-    body_html TEXT,
+    webflow_id TEXT,         -- Webflow item ID; the PATCH target. NULL until a first-time POST creates the item.
+    body_md TEXT,            -- markdown source of truth
+    body_html TEXT,          -- compact HTML regenerated from body_md; the value pushed to RichText
     meta_title TEXT,
     meta_description TEXT
 );
 ```
 
-`push_template.py` targets this schema. Adapt the SELECT query for variations.
+`push_template.py` reads the `my_items` table and SELECTs only the columns it pushes (`slug`, `webflow_id`, `body_html`, `meta_title`, `meta_description`). Adapt the table name and SELECT for your schema.
