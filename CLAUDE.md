@@ -35,7 +35,7 @@ references/
   push-pattern.md            # Bulk push workflow (20+ items)
   fix-pass-pattern.md        # Editorial sweep workflow (10+ items)
   vision-pipeline.md         # Vision batch generation (alt text, summaries)
-  webflow-gotchas.md         # 8 known failure modes with fixes
+  webflow-gotchas.md         # known failure modes with fixes
   webflow-richtext-tables.md # HTML <table> in RichText (markdown tables don't work)
   session-handoff.md         # Multi-chat batching for large jobs
 scripts/

@@ -10,7 +10,7 @@ A single Claude skill that covers three related content operations on Webflow CM
 - **Editorial fix pass** — run a targeted rewrite across existing items (strip a phrase, remove meta-content leaks, swap a heading, rewrite formulaic openers) as a repeatable, resume-safe, rollback-friendly sweep.
 - **Vision pipeline** — bulk-generate content from binary assets (alt text from images, summaries from PDFs, image categorization) and push back as field updates, including the multi-image field array schema.
 
-The skill handles the eight known gotchas that waste a first-time user's first production session: macOS SSL cert issues, the Webflow RichText whitespace-between-tags parser bug, slug soft-delete traps, background agent deadlocks, the 32MB request cap on cumulative image Reads, and more. Each is documented with symptoms and fixes in `references/webflow-gotchas.md`.
+The skill handles the known gotchas that waste a first-time user's first production session: macOS SSL cert issues, the Webflow RichText whitespace-between-tags parser bug, slug soft-delete traps, background agent deadlocks, the 32MB request cap on cumulative image Reads, and more. Each is documented with symptoms and fixes in `references/webflow-gotchas.md`.
 
 ## Structure
 
@@ -20,7 +20,8 @@ webflow-cms-ops/
 ├── references/
 │   ├── push-pattern.md              ← bulk push pattern, full push loop, multi-image field PATCH
 │   ├── fix-pass-pattern.md          ← six-step editorial fix pattern
-│   ├── webflow-gotchas.md           ← eight gotchas with symptoms and fixes
+│   ├── webflow-gotchas.md           ← gotchas with symptoms and fixes
+│   ├── webflow-richtext-tables.md   ← HTML <table> in RichText (markdown tables don't work)
 │   ├── vision-pipeline.md           ← bulk content generation from binaries (alt text, summaries)
 │   └── session-handoff.md           ← split a heavy batch across two chats via filesystem
 ├── scripts/
