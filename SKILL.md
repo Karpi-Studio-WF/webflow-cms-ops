@@ -41,6 +41,99 @@ The Python `markdown` library outputs `<ul>\n<li>...</li>\n</ul>`. Webflow's Ric
 
 Always route HTML through `scripts/compact.py` before pushing. See `references/webflow-gotchas.md` for the full diagnosis.
 
+### Code block formatting in rich text (inline `<code>` vs block `<pre><code>`)
+
+Same RichText parser family as principle 2 above. The site's code highlighting styles target `<pre><code>` only. When a multi-line code block (JSON-LD, an HTML snippet, a script, a full code example) is pushed as `<p><code>...</code></p>`, the highlighting breaks and the block renders as plain text. Inline code references inside a sentence are fine as `<code>` within `<p>`.
+
+**The rule:**
+
+- Single token or inline reference inside a sentence stays inline: `<code>` within `<p>`. Example: `<p>use the <code>display: flex</code> property</p>` is correct.
+- Multi-line code, a full HTML element, a JSON-LD block, a script tag, or anything that should visually render as a code block must be `<pre><code>...</code></pre>` at the root of the rich text. Never wrap it in `<p>`.
+
+**Detection logic.** Treat code content as block level (needs `<pre><code>`) if ANY of these hold:
+
+- contains a newline character (`\n`)
+- starts with `<script`, `<style`, `<!--`, `<html`, or `<!DOCTYPE`
+- is valid JSON or JSON-LD
+- exceeds 120 characters
+- contains more than one HTML tag
+
+Otherwise treat it as inline and leave it as `<code>` inside `<p>`.
+
+**Pre-upload check.** Run this transform on every rich text payload as the last step before pushing (after `compact.py`, so the `<pre>` blocks it creates are not re-compacted). It promotes any `<p><code>...</code></p>` whose inner content classifies as block level into a root level `<pre><code>...</code></pre>`, and leaves inline `<code>` alone:
+
+```python
+import json, re
+from html import unescape
+
+BLOCK_START = re.compile(r'\s*<(script|style|!--|html|!DOCTYPE)', re.IGNORECASE)
+TAG = re.compile(r'<[a-zA-Z/!]')
+
+def is_block_code(text):
+    """True if this code content should render as a block (<pre><code>)."""
+    t = unescape(text)
+    if "\n" in t:
+        return True
+    if BLOCK_START.match(t):
+        return True
+    if len(t) > 120:
+        return True
+    if len(TAG.findall(t)) > 1:
+        return True
+    s = t.strip()
+    if s[:1] in "{[":
+        try:
+            json.loads(s)
+            return True
+        except ValueError:
+            pass
+    return False
+
+def promote_code_blocks(html):
+    """Rewrite <p><code>...</code></p> to <pre><code>...</code></pre> when the
+    inner content is block level. Inline <code> inside prose is left alone.
+    Idempotent: existing <pre><code> is not matched."""
+    def repl(m):
+        inner = m.group(1)
+        if is_block_code(inner):
+            return "<pre><code>" + inner + "</code></pre>"
+        return m.group(0)
+    return re.sub(r'<p><code>(.*?)</code></p>', repl, html, flags=re.DOTALL)
+```
+
+Wire it into the push as the final transform: `html = promote_code_blocks(compact(html))` right before the PATCH.
+
+**Audit existing content.** To find items already pushed with block code trapped in `<p><code>`, page through the collection and flag any `<p><code>...</code></p>` whose inner content trips the block test. The Data API GET returns the HTML as pushed (see principle 6 and `references/webflow-gotchas.md`), so the stored shape is exactly what you inspect here:
+
+```python
+import urllib.request, ssl, certifi, json, re
+
+ctx = ssl.create_default_context(cafile=certifi.where())
+PCODE = re.compile(r'<p><code>(.*?)</code></p>', re.DOTALL)
+
+offenders, offset = [], 0
+while True:
+    req = urllib.request.Request(
+        f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items?limit=100&offset={offset}",
+        headers={"Authorization": f"Bearer {API_TOKEN}", "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, context=ctx) as resp:
+        items = json.loads(resp.read()).get("items", [])
+    if not items:
+        break
+    for it in items:
+        body = it["fieldData"].get(BODY_FIELD, "") or ""
+        if any(is_block_code(inner) for inner in PCODE.findall(body)):
+            offenders.append(it["fieldData"].get("slug", it["id"]))
+    offset += 100
+
+print(f"{len(offenders)} items need code-block repair:")
+for s in offenders:
+    print(f"  {s}")
+```
+
+Repair each offender by running its body through `promote_code_blocks` and pushing the result with the normal loop (see `references/push-pattern.md`). Then verify visually: open three repaired items and confirm the code blocks render with highlighting. Per principle 6, the API GET alone is not proof.
+
 ### 3. Absolute DB paths
 
 Background shells and spawned processes reset `cwd`. Relative paths work locally and fail in production. Use absolute paths everywhere:
