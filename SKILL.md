@@ -193,7 +193,8 @@ SKILL.md                              ← this file (always loaded)
 references/
   push-pattern.md                     ← bulk push pattern, full push loop, multi-image field PATCH
   fix-pass-pattern.md                 ← six-step editorial fix pattern
-  webflow-gotchas.md                  ← the eight gotchas with symptoms and fixes
+  webflow-gotchas.md                  ← the gotchas with symptoms and fixes
+  webflow-richtext-tables.md          ← HTML <table> in RichText (markdown tables don't work)
   vision-pipeline.md                  ← bulk content generation from binaries (alt text, summaries, categorization)
   session-handoff.md                  ← split a heavy batch across two chats via filesystem
 scripts/
