@@ -8,24 +8,26 @@ Read this when:
 
 Each entry below is a production failure we hit. Symptoms, cause, fix.
 
-## 1. Markdown table syntax doesn't work — use HTML `<table>` instead
+## 1. Markdown table syntax doesn't work, and bare HTML `<table>` is stripped
 
-**Symptom:** Markdown tables (`| col | col |` syntax) show as empty blank space on the rendered page. No error in the push response.
+**Symptom:** Markdown tables (`| col | col |` syntax) show as empty blank space on the rendered page. Bare HTML `<table>` pushes look fine in the GET response but render as a run-on paragraph live: all cell text concatenated with no row or column boundaries.
 
-**Cause:** The Python `markdown` library does not convert GFM pipe tables to HTML by default, so they pass through as raw text and Webflow ignores them.
+**Cause:** The Python `markdown` library does not convert GFM pipe tables to HTML by default, so they pass through as raw text. Separately, Webflow's RichText parser does not natively support `<table>` and strips the grid tags on ingest, leaving only the cell text inside a single `<p>`.
 
-**Fix:** Use HTML `<table>` directly. HTML tables work in RichText fields. Pass them inline in the same field string as your other HTML:
+**Fix:** Wrap the HTML `<table>` in a Rich Text HTML-Embed div. Contents inside `<div data-rt-embed-type="true">...</div>` are passthrough; the table tags survive verbatim:
 
 ```html
+<div data-rt-embed-type="true">
 <table>
   <thead><tr><th>Field</th><th>Description</th></tr></thead>
   <tbody><tr><td>name</td><td>What it does</td></tr></tbody>
 </table>
+</div>
 ```
 
-Run through `compact.py` like all other RichText HTML before pushing.
+Style the table via site-wide CSS targeting a custom class on `<table>`; Webflow does not auto-style raw embed contents. `compact.py` is fine but not required inside the embed.
 
-**See also:** `references/webflow-richtext-tables.md` for the full pattern, exact API call structure, and a list of mistakes other agents make.
+**See also:** `references/webflow-richtext-tables.md` for the full pattern, the styling note, exact API call structure, and a list of mistakes other agents make.
 
 ## 2. Whitespace between list tags drops children
 

@@ -38,7 +38,7 @@ If 0, stop and investigate. If surprisingly high or low, sanity-check before pro
 
 If content lives as markdown, regenerate HTML first. The Webflow RichText field has two known parser quirks (full diagnosis in `references/webflow-gotchas.md`):
 
-1. `<table>` tags are silently stripped. Convert tables to bullet lists before rendering.
+1. Bare `<table>` tags are stripped on ingest. Wrap tables in `<div data-rt-embed-type="true">...</div>` to preserve them (see `references/webflow-richtext-tables.md`), or convert to bullet lists.
 2. Whitespace between `<ul>`, `<li>`, `</ul>` silently drops list children. Compact HTML before pushing.
 
 Use `scripts/compact.py`:

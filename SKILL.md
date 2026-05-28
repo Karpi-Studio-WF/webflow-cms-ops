@@ -134,6 +134,20 @@ for s in offenders:
 
 Repair each offender by running its body through `promote_code_blocks` and pushing the result with the normal loop (see `references/push-pattern.md`). Then verify visually: open three repaired items and confirm the code blocks render with highlighting. Per principle 6, the API GET alone is not proof.
 
+**Round-trip-safe shape (when a syntax highlighter is wired up).** Sites with highlight.js (or a similar highlighter in custom code) target `<pre><code class="language-X">` precisely, and the Webflow Designer silently reverts non-conforming `<pre><code>` variants back to the legacy `<p><code>` shape the next time the article is opened. Push code blocks in this exact shape to survive both:
+
+```html
+<pre><code class="language-X">CONTENT
+</code></pre>
+```
+
+- `class="language-X"` matches the content type: `language-json` for JSON / JSON-LD, `language-html` for HTML / script snippets, `language-python` for Python. `language-html` is the safe catch-all when detection is ambiguous; it also shows as the language pill in the Designer.
+- CONTENT uses real `\n` newlines (not `<br>`), real spaces for indentation (not `&nbsp;`), and `&quot;` for `"` inside the code. Leave `&lt;`, `&gt;`, `&amp;` as-is.
+- One trailing `\n` before the closing `</code>`.
+- The wrapping `<p>` is dropped; `<pre>` sits directly in the rich text body.
+
+Verified on the Karpi Studio Schema Glossary `book` item: this exact shape survives a Designer open + publish round-trip; variants do not. When running `promote_code_blocks` above on a site with a highlighter, augment its output line to include the detected language class and a trailing `\n` before `</code>`.
+
 ### 3. Absolute DB paths
 
 Background shells and spawned processes reset `cwd`. Relative paths work locally and fail in production. Use absolute paths everywhere:
