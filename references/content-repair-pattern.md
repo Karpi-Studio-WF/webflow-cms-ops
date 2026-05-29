@@ -57,6 +57,8 @@ for it in affected:
 
 If the count is surprisingly high or low, stop and investigate. Do not push.
 
+**Verify the field slug per collection before trusting the count.** The RichText field can differ between collections on the same site: Schema Glossary Types stores the article in `body-2`, Terms in `body`. Auditing the wrong field silently returns zero changes. Inspect `fieldData` keys on one live item from each collection first.
+
 ### 4. Snapshot every body to disk
 
 Before any push, save the current value of every affected item to disk. This is your revert source:
@@ -126,11 +128,17 @@ def _detect_language(text_decoded: str) -> str:
     s = text_decoded.lstrip()
     if not s:
         return "language-html"
+    # Genuine HTML: block opens with a tag, e.g. a <script type="application/ld+json">
+    # embed. Keep language-html so the markup itself is highlighted.
     if s.startswith(("<script", "<style", "<html", "<!DOCTYPE", "<!--")):
         return "language-html"
     if re.search(r'\bdef \w|\bimport \w|^class \w', s, re.MULTILINE):
         return "language-python"
-    if s[:1] in "{[" and re.search(r'"[\w@$-]+"\s*:', s):
+    # JSON in two shapes:
+    #   full object/array: opens with { or [ and contains a "key":
+    #   JSON-LD fragment:  opens directly with a quoted key, e.g.  "sameAs": [
+    #                      (no leading { so the first-char test alone misses it)
+    if (s[:1] in "{[" and re.search(r'"[\w@$-]+"\s*:', s)) or re.match(r'"[\w@$-]+"\s*:', s):
         return "language-json"
     return "language-html"
 
@@ -155,7 +163,20 @@ def transform(field_value: str) -> str:
     return P_CODE_RE.sub(repl, field_value)
 ```
 
-Verified against the Schema Glossary `book` item with 6 unit tests: legacy-to-target conversion, idempotency, inline `<code>` untouched, no-op on non-legacy `<p><code>`, language detection across json / html / python / fallback, exact-shape match. The harness in `scripts/repair_template.py` drives audit through stage with this transform plugged in.
+Verified against the Schema Glossary `book` item with unit tests (legacy-to-target conversion, idempotency, inline `<code>` untouched, no-op on non-legacy `<p><code>`, language detection across json / html / python / fallback, exact-shape match) and applied in production to `organization` (Types, 17 blocks) and `book-format` (Terms, 4 blocks). The harness in `scripts/repair_template.py` drives audit through stage with this transform plugged in.
+
+### Detecting the language class
+
+The `language-` class is the whole point: highlight.js only fires on `<pre><code class="language-X">`, so a missing or wrong class means no highlighting. `_detect_language` is a deliberately small heuristic, not a parser:
+
+- opens with `<script` / `<style` / `<!DOCTYPE` etc.: `language-html`
+- a `def `/`import `/`class ` signal: `language-python`
+- opens with `{` or `[`, or directly with a quoted key like `"sameAs":` (a JSON-LD fragment): `language-json`
+- anything else: `language-html` (fallback)
+
+The fragment rule matters for schema content: property snippets shown in isolation (`"founder": [ ... ]`, `"address": { ... }`) open with a quoted key rather than `{`, so without it they fall to the html fallback and render miscolored. Because it is a heuristic, the audit table is the safety net: print the detected language per block on the first item of each collection and eyeball it before staging; if a block lands wrong, tune the detector or force a language for that collection, then re-audit. This is a per-collection check, not a one-time guarantee.
+
+Separate from the legacy migration, also scan for bare `<pre><code>` blocks that already exist but carry no `language-` class: they will not highlight. Some are safe to class; some are not, e.g. blocks holding live Webflow `{{wf ...}}` field bindings (a body re-push risks corrupting the binding) or non-code preformatted text (a language class would be a mislabel). Decide per block.
 
 ## Other transforms the same harness drives
 
