@@ -142,12 +142,12 @@ Repair each offender by running its body through `promote_code_blocks` and pushi
 </code></pre>
 ```
 
-- `class="language-X"` matches the content type: `language-json` for JSON / JSON-LD, `language-html` for HTML / script snippets, `language-python` for Python. `language-html` is the safe catch-all when detection is ambiguous; it also shows as the language pill in the Designer.
+- `class="language-X"` matches the content type: `language-json` for JSON / JSON-LD, `language-html` for HTML / script snippets, `language-python` for Python. When the language is ambiguous between code types, `language-html` is a reasonable default (and shows as the language pill in the Designer); when a block isn't really code or the language is genuinely unknowable, prefer `language-plaintext` over forcing a wrong label. `scripts/code_block_repair.py` automates exactly this across many blocks — it detects the common languages and falls back to `plaintext`, never the meaningless `language-unknown`.
 - CONTENT uses real `\n` newlines (not `<br>`), real spaces for indentation (not `&nbsp;`), and `&quot;` for `"` inside the code. Leave `&lt;`, `&gt;`, `&amp;` as-is.
 - One trailing `\n` before the closing `</code>`.
 - The wrapping `<p>` is dropped; `<pre>` sits directly in the rich text body.
 
-Verified on the Karpi Studio Schema Glossary `book` item: this exact shape survives a Designer open + publish round-trip; variants do not. When running `promote_code_blocks` above on a site with a highlighter, augment its output line to include the detected language class and a trailing `\n` before `</code>`.
+Verified on a live glossary item: this exact shape survives a Designer open + publish round-trip; variants do not. When running `promote_code_blocks` above on a site with a highlighter, augment its output line to include the detected language class and a trailing `\n` before `</code>`.
 
 ### 3. Absolute DB paths
 
@@ -215,6 +215,7 @@ references/
   session-handoff.md                  ← split a heavy batch across two chats via filesystem
 scripts/
   compact.py                          ← HTML compact helper (required before every push)
+  code_block_repair.py                ← code-block transforms: promote legacy blocks, add language- classes (library)
   push_template.py                    ← standalone runnable push script, edit config and run
   repair_template.py                  ← standalone runnable repair script (content-repair-pattern), edit config and run
 examples/

@@ -23,7 +23,7 @@ Content repair pulls the current value from the CMS, derives the new value purel
 
 ### 1. Define the target shape
 
-Write the exact new shape down. Verify it against one live item (e.g., the Schema Glossary `book` item for the code-block shape, or the live `/blog/webflow-pricing` tables for the embed-wrapper shape). Capture attribute-quoting style, entity escaping, internal whitespace, and any required wrappers.
+Write the exact new shape down. Verify it against one live item (e.g., a live item already in the round-trip-safe code-block shape, or a live item that has embed-wrapped tables). Capture attribute-quoting style, entity escaping, internal whitespace, and any required wrappers.
 
 If a Webflow Designer round-trip is part of the workflow (the human opens, eyeballs, publishes), confirm the target shape survives a Designer open + publish round-trip. Non-conforming variants get silently rewritten back to legacy.
 
@@ -57,7 +57,7 @@ for it in affected:
 
 If the count is surprisingly high or low, stop and investigate. Do not push.
 
-**Verify the field slug per collection before trusting the count.** The RichText field can differ between collections on the same site: Schema Glossary Types stores the article in `body-2`, Terms in `body`. Auditing the wrong field silently returns zero changes. Inspect `fieldData` keys on one live item from each collection first.
+**Verify the field slug per collection before trusting the count.** The RichText field can differ between collections on the same site: one collection may store the article in `body-2`, another in `body`. Auditing the wrong field silently returns zero changes. Inspect `fieldData` keys on one live item from each collection first.
 
 ### 4. Snapshot every body to disk
 
@@ -113,7 +113,7 @@ That's the only project-specific code. The harness handles audit, snapshot, diff
 
 ## Worked example: code-block migration
 
-The Schema Glossary code-block migration. Replaces legacy `<p><code>...with <br>/&nbsp;...</code></p>` with the round-trip-safe `<pre><code class="language-X">CONTENT\n</code></pre>` shape from `SKILL.md`.
+This worked example replaces legacy `<p><code>...with <br>/&nbsp;...</code></p>` with the round-trip-safe `<pre><code class="language-X">CONTENT\n</code></pre>` shape from `SKILL.md`.
 
 ```python
 import re
@@ -163,7 +163,7 @@ def transform(field_value: str) -> str:
     return P_CODE_RE.sub(repl, field_value)
 ```
 
-Verified against the Schema Glossary `book` item with unit tests (legacy-to-target conversion, idempotency, inline `<code>` untouched, no-op on non-legacy `<p><code>`, language detection across json / html / python / fallback, exact-shape match) and applied in production to `organization` (Types, 17 blocks) and `book-format` (Terms, 4 blocks). The harness in `scripts/repair_template.py` drives audit through stage with this transform plugged in.
+Verified with unit tests (legacy-to-target conversion, idempotency, inline `<code>` untouched, no-op on non-legacy `<p><code>`, language detection across json / html / python / fallback, exact-shape match) and applied in production across two collections. The harness in `scripts/repair_template.py` drives audit through stage with this transform plugged in; `scripts/code_block_repair.py` is the generalized, multi-language version of the same transform (it detects more languages and falls back to `plaintext`), ready to drop straight into the harness as its `transform()`.
 
 ### Detecting the language class
 
@@ -186,7 +186,7 @@ One-liners showing the framework's reach. Same audit / snapshot / diff / stage /
 
 ```python
 def transform(v: str) -> str:
-    return re.sub(r'\s*\|\s*Karpi Studio\s*$', '', v)
+    return re.sub(r'\s*\|\s*Example Co\s*$', '', v)
 ```
 
 **Rename deprecated schema property `founders` to `founder`:**
@@ -225,9 +225,9 @@ def transform(v: str) -> str:
 Never batch multiple unrelated repairs into one pass. One pass per logical shape change:
 
 ```
-Pass 1: code blocks legacy -> round-trip-safe   (Schema Glossary Types + Terms)
-Pass 2: brand suffix strip on meta-title        (Blog + AEOs + CROs)
-Pass 3: founders -> founder rename              (Schema Glossary Types subset)
+Pass 1: code blocks legacy -> round-trip-safe   (across two collections)
+Pass 2: brand suffix strip on meta-title        (several collections)
+Pass 3: founders -> founder rename              (one collection, a subset)
 ```
 
 Each pass owns its progress file (`/tmp/repair_<pass>_progress.txt`) for resume safety. If pass 2 breaks mid-batch, you don't need to rerun pass 1.
