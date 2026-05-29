@@ -2,7 +2,14 @@
 
 ## The short answer
 
-Webflow's RichText parser strips bare `<table>` tags on ingest. The cells survive but the grid is gone, so the table renders as a run-on paragraph. The fix: wrap the table in a Rich Text HTML-Embed div, `<div data-rt-embed-type="true">...</div>`. Contents inside the embed are passthrough; the table tags survive verbatim and render normally.
+A table renders correctly in Webflow RichText only when **two** things are true: it sits inside a Rich Text HTML-Embed wrapper (so the markup survives intact), and the site has CSS that targets it (so it isn't unstyled).
+
+A bare `<table>` pushed straight into a RichText field is unreliable. In older cases Webflow flattened the grid into a run-on paragraph; in the current blog collection the grid **survives** ingest but renders with **no styling**, so the live page looks broken either way. The API GET echoes your markup back intact in both cases, so the breakage is invisible to automated checks — you only see it on the rendered page (the "API lies" trap, `webflow-gotchas.md` #7).
+
+The fix:
+
+1. Wrap every table in `<div data-rt-embed-type="true">...</div>`. Contents inside the embed are stored and rendered raw (passthrough), so the table structure is preserved verbatim.
+2. Style it with one site-wide CSS rule scoped to your rich-text wrapper, targeting the bare `table` / `th` / `td` tags. **Tables carry no class** — the CSS hooks the tags, not a per-table class.
 
 ## What works
 
@@ -20,19 +27,30 @@ Webflow's RichText parser strips bare `<table>` tags on ingest. The cells surviv
 </div>
 ```
 
-Pass that as part of the RichText field string when calling `create_collection_items` or `update_collection_items` via the Webflow Data API or MCP tool.
+Pass that as part of the RichText field string when calling `create_collection_items` or `update_collection_items` via the Webflow Data API or MCP tool. No class on the `<table>`; styling comes from the site CSS below.
 
 ## What does NOT work
 
 ```html
-<!-- Webflow strips the table grid on ingest; cells render concatenated into a paragraph -->
+<!-- (a) Bare table, no embed wrapper. Unreliable: the grid has been observed to
+        flatten to a run-on paragraph, and where it survives it renders unstyled.
+        Either way the live page looks broken. -->
 <table>
   <thead><tr><th>Col A</th><th>Col B</th></tr></thead>
   <tbody><tr><td>row 1a</td><td>row 1b</td></tr></tbody>
 </table>
 ```
 
-This is the failure mode behind the flattened "Choosing your @type" table observed on `schema-glossary-types/organization` before the fix: every `<th>` and `<td>` text concatenated into a single `<p>` with no row or column boundaries.
+```html
+<!-- (b) Correctly embed-wrapped, but the site has no CSS targeting tables inside
+        the rich-text wrapper. The grid is preserved but renders with browser-default
+        (i.e. effectively no) styling — the "looks like shit on the front end" case. -->
+<div data-rt-embed-type="true">
+<table><thead><tr><th>Col A</th></tr></thead><tbody><tr><td>row 1a</td></tr></tbody></table>
+</div>
+```
+
+Both are real failure modes. (a) is the structural risk; (b) is the styling risk. You need the wrapper AND the CSS.
 
 ## Why the embed wrapper
 
@@ -45,19 +63,89 @@ The `data-rt-embed-type="true"` div is how Webflow serializes a Rich Text HTML-E
 
 ## Styling
 
-No class needed on `<table>`. Style with site-wide CSS that targets bare `<table>` elements inside the rich text wrapper (e.g., a rule on `.rich-text table { ... }` or the equivalent for your project). That keeps the markup clean and applies one consistent look across every table in the collection. A custom class is only needed for a one-off override on a specific table.
+Style tables with **one site-wide rule scoped to your rich-text wrapper, targeting the bare tags**. The tables themselves carry no class. Substitute your own wrapper class for `.js-css-rich-text-block` (that is the class on the Karpi rich-text block; yours may differ — inspect the rendered article to find it):
+
+```html
+<!-- Styling tables inside the rich-text blogs -->
+<style>
+  .js-css-rich-text-block table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: var(--size--size-6) 0;
+    font-family: var(--text--body);
+    font-size: var(--text--sm);
+    line-height: var(--text--line-height-base);
+  }
+  .js-css-rich-text-block table thead th {
+    text-align: left;
+    padding: var(--size--size-3) var(--size--size-4);
+    border-bottom: 2px solid var(--_color-primitive---black--900);
+    font-weight: 500;
+    color: var(--_color-primitive---black--900);
+  }
+  .js-css-rich-text-block table tbody td {
+    padding: var(--size--size-3) var(--size--size-4);
+    border-bottom: 1px solid var(--_color-primitive---grey--600_a50);
+    color: var(--_color-primitive---grey--800);
+  }
+  .js-css-rich-text-block table tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .js-css-rich-text-block table tbody tr:hover {
+    background: rgba(0, 0, 0, 0.02);
+  }
+  /* Emphasize the first column structurally — no class needed */
+  .js-css-rich-text-block table tbody td:first-child {
+    color: var(--_color-primitive---black--900);
+    font-weight: 500;
+  }
+  .js-css-rich-text-block table a {
+    color: var(--_color-primitive---black--700);
+    text-decoration: underline;
+  }
+  /* Optional additive helpers — applied to specific cells/rows when wanted.
+     They enhance when present and degrade silently when absent, so a class-less
+     table never breaks; it just renders without the accent. */
+  .js-css-rich-text-block table .ks-highlight {
+    color: var(--_color-primitive---black--900);
+    font-weight: 500;
+  }
+  .js-css-rich-text-block table .ks-total td {
+    border-top: 2px solid var(--_color-primitive---black--900);
+  }
+</style>
+```
+
+Notes:
+
+- The `var(--...)` values are the site's design tokens. Substitute your own tokens or literal values.
+- **Structural selectors do the per-column / per-row work.** `td:first-child` emphasizes the first column on every table with no class; `tr:last-child td` removes the last row's border. This is why tables need no class.
+- **`.ks-highlight` and `.ks-total` are optional.** Keep them if you want to accent a specific cell or mark a totals row that structure alone can't identify. A table without them simply renders without that accent — nothing breaks. Do not require them.
+- The same wrapper-scoped approach styles code blocks. Target `.js-css-rich-text-block pre` / `… pre code` (and, if a line-number highlighter is wired up, `… pre .hljs-ln` etc.) the same way.
+
+## Migrating from the old class-based approach
+
+The live blog currently styles tables via `.ks-pricing-table` (a class on every `<table>`). The move is to class-less tables + the tag-scoped CSS above. **Sequence it carefully:** the tag-scoped rule must be live *before* you strip `ks-pricing-table` from the tables, or the already-correct tables go unstyled in the gap.
+
+1. Add the `.js-css-rich-text-block table { … }` rule to the site (it can coexist with the existing `.ks-pricing-table` rule).
+2. Verify a published page still renders tables correctly with both rules present.
+3. Then run a fix pass (`references/fix-pass-pattern.md`) that removes `class="ks-pricing-table"` from `<table>` tags across the collection.
+4. Remove the now-dead `.ks-pricing-table` rule.
 
 ## Rules that matter
 
-1. **Wrap every table in the embed.** Bare `<table>` is stripped on ingest. The `data-rt-embed-type="true"` wrapper is non-optional.
-2. **Single string only.** The entire RichText value is one HTML string. Embed-wrapped tables sit inline with `<p>`, `<h2>`, `<ul>`, `<pre>`; no nesting issues.
-3. **Escape quotes inside attribute values.** When the HTML lives inside a JSON request, escape `href="..."` as `href=\"...\"` in the JSON string.
-4. **`<thead>` is optional but recommended.** Without `<thead>`, the table still renders; header styling may differ.
-5. **`compact.py` is fine but not required inside the embed.** Content inside `data-rt-embed-type` is passthrough, so compacting does not change its rendered behavior. Outside the embed, keep using `compact.py` for normal RichText HTML.
+1. **Wrap every table in the embed, AND make sure the site CSS targets it.** A bare `<table>` renders broken (flattened, or surviving-but-unstyled). The `data-rt-embed-type="true"` wrapper is non-optional, and so is having a CSS rule that styles tables inside the rich-text wrapper.
+2. **No class on the `<table>`.** Style via tags scoped to the rich-text wrapper. Reserve classes for optional accents (`.ks-highlight`, `.ks-total`) that degrade gracefully.
+3. **Single string only.** The entire RichText value is one HTML string. Embed-wrapped tables sit inline with `<p>`, `<h2>`, `<ul>`, `<pre>`; no nesting issues.
+4. **Escape quotes inside attribute values.** When the HTML lives inside a JSON request, escape `href="..."` as `href=\"...\"` in the JSON string.
+5. **`<thead>` is optional but recommended.** Without `<thead>`, the table still renders; header styling may differ.
+6. **`compact.py` is fine but not required inside the embed.** Content inside `data-rt-embed-type` is passthrough, so compacting does not change its rendered behavior. Outside the embed, keep using `compact.py` for normal RichText HTML.
 
 ## What other agents get wrong
 
-- **Pushing a bare `<table>`.** It gets stripped; cells render concatenated. The `data-rt-embed-type` wrapper is required.
+- **Pushing a bare `<table>`** (no embed wrapper). It renders broken on the live page — flattened to a paragraph, or surviving but unstyled. The `data-rt-embed-type` wrapper is required.
+- **Wrapping correctly but assuming Webflow styles it.** Webflow applies no useful default styling to a table in rendered rich text. Without a site CSS rule targeting tables inside the rich-text wrapper, an embed-wrapped table still looks broken. This is the regression an earlier version of this skill caused by saying "no class needed, bare `<table>` is the default" — bare tables survived but rendered unstyled.
+- **Putting a per-table class back as the styling mechanism.** The class-less + tag-scoped-CSS approach is the standard. A class is only for optional accents that degrade gracefully.
 - **Wrapping in `<figure class="w-richtext-figure-type-table">`.** Webflow's Designer uses this figure class internally, but the correct shape for API pushes is the `data-rt-embed-type` embed div.
 - **Using markdown table syntax (`| col | col |`).** Markdown pipe tables do NOT work in RichText fields. Convert to HTML inside the embed.
 - **Double-escaping HTML entities.** `&amp;amp;` instead of `&amp;`. Encode once.
@@ -65,5 +153,5 @@ No class needed on `<table>`. Style with site-wide CSS that targets bare `<table
 
 ## Verified
 
-- Karpi Studio blog `/blog/webflow-pricing`: 12 pricing tables, all wrapped in `<div data-rt-embed-type="true">` and rendering live.
-- `schema-glossary-types/organization`: bare `<table>` was stripped to a flattened paragraph (the failure mode); embed-wrapped replacement preserves the table structure on ingest and was confirmed in the stored HTML after PATCH.
+- Karpi Studio blog `/blog/webflow-pricing` (collection `67756fb6c22d9437aa3af048`, item `69919bd7eee852ebdcb83021`): 12 tables, every one inside a `<div data-rt-embed-type="true">` embed. As of 2026-05-29 they still carry `class="ks-pricing-table"` (the prior class-based styling, migration to class-less + tag-scoped CSS pending). The embed-wrapper requirement is confirmed against the live Data API.
+- Across the same collection (49 items), 4 tables in 3 other items (`223-schema-articles-claude-code`, `webflow-team-plan-vs-enterprise-b2b`, `webflow-multi-image-alt-text-claude`) are bare — no embed wrapper, no class. Their grid HTML survives in storage but renders unstyled on the live page. These are the "looks broken on the front end" cases this reference exists to prevent.
