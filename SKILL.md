@@ -23,7 +23,7 @@ Multiple references may apply to one task. For example, running a fix pass uses 
 
 ## Principles that apply to every push, fix pass, and content repair
 
-All eight are non-negotiable. Each exists because skipping it caused a production failure we've hit.
+All nine are non-negotiable. Each exists because skipping it caused a production failure we've hit.
 
 ### 1. `certifi.where()` for SSL context
 
@@ -200,6 +200,21 @@ Routing for batches where Claude GENERATES content from binaries (vision-based a
 - **> 800 items, OR user wants to step away while it runs, OR simplicity matters more than speed:** hand off to a fresh chat via `.handoff/` files (`session-handoff.md`)
 
 Estimate before starting: `total_binaries × average_size_KB`. If that product exceeds 25MB (32MB minus safety margin), do NOT inline. Pick the next-larger pattern.
+
+### 9. Re-fetch the live value immediately before every write — and validate it
+
+Never build an edit on a stale or assumed copy. State drifts between the fetch and a later write: a teammate republishes, or the Webflow Designer rewrites the item out from under you — opening a page in the Designer editor silently reverts **every** `<pre><code>` block back to the legacy `<p><code>` shape (with `<br>`/`&nbsp;`). Immediately before any PATCH or create, GET the exact item(s) and field(s) you are about to change, derive the new value from that just-fetched value, and gate the write on a document-level integrity check: expected `<pre>`/heading/block counts, required markers present, `isDraft` as expected, no known corruption signature. If the fetched document doesn't match expectations, STOP and surface it — do not write.
+
+```python
+cur  = http("GET", f".../items/{item_id}")              # re-fetch NOW, not earlier
+body = cur["fieldData"][FIELD]
+assert len(re.findall(r"<pre[^>]*>", body)) >= EXPECTED_MIN_BLOCKS  # integrity gate
+assert "<br><br></code></p>" not in body                            # abort on known corruption
+new = transform(body)                                               # build from the fresh value
+# ...only PATCH after the gate passes
+```
+
+A guardrail that validates only the few bytes you're touching, while ignoring whether the surrounding document is intact, will happily publish corruption. This exists because an edit was once pushed onto a draft the Designer had silently reverted: the write checked only its two target lines and propagated the reverted state to the rest of the page.
 
 ## Files in this skill
 

@@ -97,6 +97,7 @@ After the staged push, the human opens each item in the Webflow Designer, eyebal
 4. **Idempotent transformer.** Re-running on already-converted content must be a no-op.
 5. **Structural verification, not byte equality.** Webflow normalizes.
 6. **Per-collection approval gate.** First item in each collection: full per-block diff. After approval, batch the rest.
+7. **Re-fetch and integrity-check immediately before each write.** The audit fetch goes stale fast — a single Designer open reverts every `<pre><code>` on the page back to legacy `<p><code>`. GET the item again right before its PATCH, build the new value from that fresh copy, and assert document-level sanity (expected `<pre>`/heading counts, no `<br><br></code>` revert signature, expected `isDraft`). If it doesn't match, abort that item; never write onto an unexpected state. Validating only the lines you're changing will propagate corruption already present in the rest of the body.
 
 ## The transformer interface
 

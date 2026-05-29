@@ -52,7 +52,7 @@ examples/
 
 **Scripts are executed, not read into context.** `compact.py` and `push_template.py` are production utilities — edit the CONFIG block in `push_template.py` and run directly. Do not summarize or inline them.
 
-## The 8 Non-Negotiable Principles
+## The 9 Non-Negotiable Principles
 
 Every push, fix pass, and vision batch follows these. Each exists because it prevented a real production failure:
 
@@ -64,6 +64,7 @@ Every push, fix pass, and vision batch follows these. Each exists because it pre
 6. **Visual verification after every push** — API GET echoes your HTML back; it does not confirm Webflow rendered it correctly. Open 3+ items in the Webflow editor or on the live page.
 7. **Never run pushes from background Claude Code agents** — Permission prompts cannot reach background agents; they deadlock.
 8. **Estimate context budget before vision batches** — Reading binaries embeds bytes permanently in history. Over ~200 binaries, cumulative payload exceeds Anthropic's 32MB per-request cap.
+9. **Re-fetch and validate immediately before every write** — Never edit from a stale or assumed copy. State drifts between fetch and write: a teammate republishes, or the Webflow Designer silently reverts *every* `<pre><code>` block on a page back to legacy `<p><code>` (with `<br>`/`&nbsp;`) the moment the item is opened in its editor. Right before any PATCH, GET the exact item/field you'll change, build the new value from that fresh copy, and gate the write on a document-level integrity check — expected `<pre>`/heading/block counts, no corruption signature, expected `isDraft`. If it doesn't match expectations, STOP and surface it; do not write. A guardrail that validates only the bytes you're touching will publish the corruption around them.
 
 ## Key Patterns
 
