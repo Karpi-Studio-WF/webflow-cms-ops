@@ -34,6 +34,7 @@ SKILL.md                     # Entry point — routes tasks to reference pattern
 references/
   push-pattern.md            # Bulk push workflow (20+ items)
   fix-pass-pattern.md        # Editorial sweep workflow (10+ items)
+  content-repair-pattern.md  # Shape repair on stored CMS field values (legacy markup migration)
   vision-pipeline.md         # Vision batch generation (alt text, summaries)
   webflow-gotchas.md         # known failure modes with fixes
   webflow-richtext-tables.md # HTML <table> in RichText (markdown tables don't work)
@@ -41,6 +42,7 @@ references/
 scripts/
   compact.py                 # HTML whitespace stripper (required for all RichText pushes)
   push_template.py           # Standalone push script (edit CONFIG block then run)
+  repair_template.py         # Standalone repair script (content-repair-pattern); edit CONFIG block then run
 examples/
   minimal-example.md         # End-to-end walkthrough for 10 markdown files
 ```
