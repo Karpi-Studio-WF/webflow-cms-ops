@@ -20,11 +20,12 @@ Run a bulk push (after editing the CONFIG block in the script):
 python3 scripts/push_template.py
 ```
 
-Use `compact.py` as a library, not a standalone command:
+Use `compact.py` as a library, not a standalone command. It exposes two entry points: `to_compact_html(markdown)` renders markdown to push-ready HTML; `compact(html)` compacts already-rendered HTML (this is the one fix passes call after regenerating from `body_md`):
 
 ```python
-from compact import to_compact_html
-html = to_compact_html(markdown_string)
+from compact import to_compact_html, compact
+html = to_compact_html(markdown_string)   # markdown → push-ready HTML
+html = compact(existing_html)             # already HTML → push-ready
 ```
 
 ## Architecture
@@ -87,7 +88,8 @@ Split heavy batches across two chat sessions when the 32MB request cap is near. 
 - **Auth:** Bearer token — never commit tokens; set in the CONFIG block of scripts
 - **Rate limit:** 150 req/min; scripts enforce 0.5s delay
 - **RichText field slug:** Often `body`, but may be `body-2` — verify by fetching one live item and inspecting `fieldData` keys
-- **Markdown table syntax doesn't work** — use HTML `<table>` directly; it renders fine in RichText (see `references/webflow-richtext-tables.md`)
+- **Tables:** markdown table syntax doesn't work, AND bare `<table>` is stripped on ingest. Wrap every table in a Rich Text HTML-Embed div — `<div data-rt-embed-type="true">...</div>` — and the grid survives verbatim (see `references/webflow-richtext-tables.md`)
+- **Code blocks:** block-level code must be `<pre><code>` at the RichText root, never `<p><code>` (which breaks highlighting and renders as plain text). Single inline tokens stay as `<code>` inside `<p>`. Run `promote_code_blocks()` (defined in `SKILL.md`) as the final transform *after* `compact.py`. On sites with a syntax highlighter, push the exact shape `<pre><code class="language-X">…\n</code></pre>` or the Designer silently reverts it on the next open (see `SKILL.md`, "Code block formatting in rich text")
 - **Multi-image field PATCH:** Must spread `**img` to preserve `fileId` and `url`; only override the target field
 
 ## Expected SQLite Schema
