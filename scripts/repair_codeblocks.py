@@ -41,10 +41,15 @@ COLLECTIONS = {
     "types": "69d782c825cd3b36434946f8",
     "terms": "69d78318b11f74482c3ac35d",
 }
+# RichText field differs per collection (verified by inspecting fieldData keys on a
+# live item): Schema Glossary Types stores the article in body-2, Terms in body.
+FIELDS = {
+    "types": "body-2",
+    "terms": "body",
+}
 COLLECTION_NAME = os.environ.get("REPAIR_COLLECTION", "types")
 COLLECTION_ID = COLLECTIONS[COLLECTION_NAME]
-
-FIELD_SLUG = "body-2"
+FIELD_SLUG = os.environ.get("REPAIR_FIELD", FIELDS.get(COLLECTION_NAME, "body-2"))
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SNAPSHOT_DIR = os.path.join(REPO, "snapshots", COLLECTION_NAME)
 PROGRESS_FILE = f"/tmp/repair_codeblocks_{COLLECTION_NAME}_progress.txt"
@@ -269,22 +274,26 @@ def run_audit() -> int:
     print(f"Snapshotted {len(affected)} affected bodies (+ full item JSON) to:\n  {SNAPSHOT_DIR}/\n")
 
     tally: dict[str, int] = {}
+    verbose = os.environ.get("REPAIR_VERBOSE", "").lower() in ("1", "yes", "true")
+    print(f"{'slug':<42} | conv | languages")
+    print("-" * 78)
     for it in affected:
         slug = it["fieldData"]["slug"]
         body = it["fieldData"].get(FIELD_SLUG, "") or ""
         rows = block_report(body)
         legacy_rows = [r for r in rows if r["legacy"]]
-        clean_rows = [r for r in rows if not r["legacy"]]
-        print(f"### {slug}  (id={it['id']}, {len(body):,} bytes)")
-        print(f"    <p><code> blocks: {len(rows)} total | to convert: {len(legacy_rows)} | already-clean: {len(clean_rows)}")
-        print(f"    {'#':>3}  {'legacy':<6}  {'language':<16}  preview")
-        for r in rows:
-            print(f"    {r['n']:>3}  {('yes' if r['legacy'] else 'no'):<6}  {r['lang']:<16}  {r['preview']}")
-            if r["legacy"]:
-                tally[r["lang"]] = tally.get(r["lang"], 0) + 1
-        print()
+        item_tally: dict[str, int] = {}
+        for r in legacy_rows:
+            item_tally[r["lang"]] = item_tally.get(r["lang"], 0) + 1
+            tally[r["lang"]] = tally.get(r["lang"], 0) + 1
+        langs = ", ".join(f"{k.replace('language-', '')}:{v}" for k, v in sorted(item_tally.items()))
+        print(f"{slug[:42]:<42} | {len(legacy_rows):>4} | {langs}")
+        if verbose:
+            for r in rows:
+                mark = "yes" if r["legacy"] else "no "
+                print(f"      #{r['n']:>3}  {mark}  {r['lang']:<16}  {r['preview']}")
 
-    print("Language tally (blocks to convert):")
+    print(f"\nOverall language tally (blocks to convert): {sum(tally.values())} blocks across {len(affected)} items")
     for lang, n in sorted(tally.items()):
         print(f"  {lang}: {n}")
     print("\nREAD-ONLY audit complete. No writes performed.")
