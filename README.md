@@ -4,12 +4,13 @@ A Claude skill for bulk-publishing and editorial fix passes on Webflow CMS. Buil
 
 ## What this is
 
-A single Claude skill that covers four related content operations on Webflow CMS:
+A single Claude skill that covers five related content operations on Webflow CMS:
 
 - **Bulk push** — send new or updated content from a local source (SQLite, markdown, CSV) to a Webflow CMS collection at scale, beyond what the MCP or Designer handle well.
 - **Editorial fix pass** — run a targeted rewrite across existing items (strip a phrase, remove meta-content leaks, swap a heading, rewrite formulaic openers) as a repeatable, resume-safe, rollback-friendly sweep.
 - **Vision pipeline** — bulk-generate content from binary assets (alt text from images, summaries from PDFs, image categorization) and push back as field updates, including the multi-image field array schema.
 - **Content shape repair**: reshape legacy markup on stored CMS field values to a new target shape across many items (legacy code blocks to round-trip-safe `<pre><code>`, brand suffix stripped from `meta-title`, deprecated schema property renames, broken tables restored, etc.). Workflow: audit, snapshot, transform with an idempotent pure function, diff, stage push, human publishes from the Designer.
+- **Secondary JSON-LD via CMS field**: inject per-article secondary schema (FAQPage, HowTo, Product, Review, BreadcrumbList) alongside the page's primary schema. One-time setup creates a dedicated CMS field and a template embed; per-article workflow extracts the content (Q&As, steps, etc.) from the body and writes the JSON-LD object into the field. Same harness as content-repair, in cross-field mode (read body, write to dedicated field).
 
 The skill handles the known gotchas that waste a first-time user's first production session: macOS SSL cert issues, the Webflow RichText whitespace-between-tags parser bug, slug soft-delete traps, background agent deadlocks, the 32MB request cap on cumulative image Reads, and more. Each is documented with symptoms and fixes in `references/webflow-gotchas.md`.
 
@@ -22,6 +23,7 @@ webflow-cms-ops/
 │   ├── push-pattern.md              ← bulk push pattern, full push loop, multi-image field PATCH
 │   ├── fix-pass-pattern.md          ← six-step editorial fix pattern
 │   ├── content-repair-pattern.md    ← shape repair on stored CMS field values (legacy markup migration)
+│   ├── faqpage-schema.md            ← FAQPage and other secondary JSON-LD via a dedicated CMS field
 │   ├── webflow-gotchas.md           ← gotchas with symptoms and fixes
 │   ├── webflow-richtext-tables.md   ← HTML <table> in RichText (markdown tables don't work)
 │   ├── vision-pipeline.md           ← bulk content generation from binaries (alt text, summaries)

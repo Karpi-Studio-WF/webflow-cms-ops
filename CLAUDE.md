@@ -36,6 +36,7 @@ references/
   push-pattern.md            # Bulk push workflow (20+ items)
   fix-pass-pattern.md        # Editorial sweep workflow (10+ items)
   content-repair-pattern.md  # Shape repair on stored CMS field values (legacy markup migration)
+  faqpage-schema.md          # FAQPage and other secondary JSON-LD via a dedicated CMS field
   vision-pipeline.md         # Vision batch generation (alt text, summaries)
   webflow-gotchas.md         # known failure modes with fixes
   webflow-richtext-tables.md # HTML <table> in RichText (markdown tables don't work)

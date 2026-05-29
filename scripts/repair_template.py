@@ -13,6 +13,15 @@ Performs the pattern documented in `references/content-repair-pattern.md`:
 DOES NOT publish. The staged change sits on top of the published version; the human
 reviews each item in the Webflow Designer and publishes from there.
 
+Supports two modes:
+  - **In-place repair** (default): SOURCE_FIELD == DEST_FIELD. Read a field, transform,
+    write back to the same field. Use for code-block migrations, meta-title cleanups,
+    deprecated property renames, etc.
+  - **Cross-field repair**: SOURCE_FIELD != DEST_FIELD. Read from one field, transform,
+    write to a different field. Use for derived-content jobs like extracting Q&As from
+    the body and writing FAQPage JSON-LD to a dedicated `faq-schema` field
+    (see `references/faqpage-schema.md`).
+
 Requires:
     pip3 install certifi
 
@@ -32,13 +41,14 @@ import urllib.request
 
 
 # ============================================================================
-# CONFIG — edit these five values, then drop in your transformer below
+# CONFIG: edit these values, then drop in your transformer below
 # ============================================================================
 
 API_TOKEN = "<YOUR_WEBFLOW_API_TOKEN>"     # CMS read/write scope only
 COLLECTION_ID = "<YOUR_COLLECTION_ID>"
-FIELD_SLUG = "body-2"                       # or "body" / "article-text"; verify by GETting one item
-SNAPSHOT_DIR = "/tmp/repair_snapshots"      # absolute path; per-item bodies written here
+SOURCE_FIELD = "body-2"                     # field the transformer reads (verify by GETting one item)
+DEST_FIELD = SOURCE_FIELD                   # field the result is written to; defaults to SOURCE_FIELD (in-place)
+SNAPSHOT_DIR = "/tmp/repair_snapshots"      # absolute path; per-item DEST_FIELD values written here (revert source)
 PROGRESS_FILE = "/tmp/repair_progress.txt"  # resume-safe; skip slugs already pushed
 
 # Webflow allows 150 req/min; 0.5s = 120 req/min with burst headroom.
@@ -49,44 +59,50 @@ REQUEST_DELAY_SECONDS = 0.5
 # TRANSFORMER — replace this body with your project-specific transformation
 # ============================================================================
 
-def transform(field_value: str) -> str:
-    """Pure: current field value -> new field value. Idempotent.
+def transform(source_value: str) -> str:
+    """Pure: SOURCE_FIELD value -> DEST_FIELD value. Idempotent.
 
     Replace this body with your transformation logic. Rules:
       - Pure: no I/O.
       - Idempotent: running twice equals running once.
-      - Conservative: only touch your target legacy shape.
+      - Conservative: only touch your target shape.
       - Testable: easy to assert on sample inputs.
 
-    Worked example (Schema Glossary code-block migration) is documented in
-    `references/content-repair-pattern.md`."""
+    For an in-place repair (DEST_FIELD == SOURCE_FIELD), return the reshaped value.
+    For a cross-field repair (DEST_FIELD != SOURCE_FIELD), return the derived value
+    for the destination field (e.g., extracted JSON-LD).
+    Return "" if this item produces no destination value (the harness skips it).
+
+    Worked examples in references/content-repair-pattern.md and
+    references/faqpage-schema.md."""
     raise NotImplementedError("Replace transform() with your transformation logic.")
 
 
 # ============================================================================
-# STRUCTURAL VERIFICATION — customize for the shape your transform changes
+# STRUCTURAL VERIFICATION: customize for the shape your transform produces
 # ============================================================================
 
-def structural_markers(html: str) -> dict:
-    """Counts used for pre/post structural verification.
+def structural_markers(value: str) -> dict:
+    """Counts used for pre/post structural verification on the DEST_FIELD value.
 
     The harness checks that the API echo's markers match the local expected markers
-    after each PATCH. Customize the keys to match what your transformation changes.
-    Defaults below are reasonable for code-block migrations; adjust freely."""
+    after each PATCH. Customize the keys to match what your transformation produces.
+    Defaults below are reasonable for code-block migrations on a rich-text body;
+    adjust freely for other repairs."""
     return {
-        "h2": len(re.findall(r"<h2[^>]*>", html)),
-        "h3": len(re.findall(r"<h3[^>]*>", html)),
-        "h4": len(re.findall(r"<h4[^>]*>", html)),
-        "pre": len(re.findall(r"<pre[^>]*>", html)),
+        "h2": len(re.findall(r"<h2[^>]*>", value)),
+        "h3": len(re.findall(r"<h3[^>]*>", value)),
+        "h4": len(re.findall(r"<h4[^>]*>", value)),
+        "pre": len(re.findall(r"<pre[^>]*>", value)),
         # legacy <p><code> with <br> or &nbsp; (the shape this template targets by default)
         "legacy_p_code": sum(
-            1 for m in re.finditer(r"<p>\s*<code>(.*?)</code>", html, re.DOTALL)
+            1 for m in re.finditer(r"<p>\s*<code>(.*?)</code>", value, re.DOTALL)
             if re.search(r"<br|&nbsp;", m.group(1))
         ),
     }
 
 
-# After verification, this set of keys MUST be zero on the post-push echo or the push
+# After verification, these keys MUST be zero on the post-push echo or the push
 # is treated as failed. Add markers that should disappear entirely after a successful
 # repair (e.g., the legacy shape your transform converts away).
 MUST_BE_ZERO_AFTER_PUSH = {"legacy_p_code"}
@@ -137,33 +153,44 @@ def patch_item(collection_id: str, item_id: str, field_data: dict) -> dict:
     )
 
 
+def _read_source(item: dict) -> str:
+    return item["fieldData"].get(SOURCE_FIELD, "") or ""
+
+
+def _read_dest(item: dict) -> str:
+    return item["fieldData"].get(DEST_FIELD, "") or ""
+
+
 def audit(items: list[dict]) -> list[dict]:
+    """An item is affected if transform(source) differs from current dest AND is non-empty."""
     affected = []
     for it in items:
-        body = it["fieldData"].get(FIELD_SLUG, "") or ""
+        src = _read_source(it)
+        dst = _read_dest(it)
         try:
-            new = transform(body)
+            new = transform(src)
         except Exception as e:
             sys.exit(f"transform() raised on item {it['fieldData'].get('slug', it['id'])}: {e}")
-        if new != body:
+        if new and new != dst:
             affected.append(it)
     return affected
 
 
 def snapshot_all(items: list[dict]) -> None:
+    """Save current DEST_FIELD value to disk for every affected item. Revert source."""
     os.makedirs(SNAPSHOT_DIR, exist_ok=True)
     for it in items:
         slug = it["fieldData"]["slug"]
-        body = it["fieldData"].get(FIELD_SLUG, "") or ""
+        dst = _read_dest(it)
         with open(f"{SNAPSHOT_DIR}/{slug}.html", "w") as f:
-            f.write(body)
+            f.write(dst)
 
 
-def diff_summary(slug: str, old: str, new: str) -> None:
-    om = structural_markers(old)
-    nm = structural_markers(new)
-    print(f"\n=== Diff for {slug} ===")
-    print(f"Body size: {len(old):,} -> {len(new):,} ({len(new)-len(old):+d})")
+def diff_summary(slug: str, before_dest: str, after_dest: str) -> None:
+    om = structural_markers(before_dest)
+    nm = structural_markers(after_dest)
+    print(f"\n=== Diff for {slug} (DEST_FIELD={DEST_FIELD}) ===")
+    print(f"Size: {len(before_dest):,} -> {len(after_dest):,} ({len(after_dest)-len(before_dest):+d})")
     for k in om:
         flag = "  <- CHANGED" if om[k] != nm[k] else ""
         print(f"  {k}: {om[k]} -> {nm[k]}{flag}")
@@ -196,7 +223,7 @@ def record_progress(slug: str) -> None:
 
 def main() -> int:
     if API_TOKEN.startswith("<") or COLLECTION_ID.startswith("<"):
-        sys.exit("Fill in API_TOKEN, COLLECTION_ID, FIELD_SLUG in the CONFIG block first.")
+        sys.exit("Fill in API_TOKEN, COLLECTION_ID, SOURCE_FIELD, DEST_FIELD in the CONFIG block first.")
     try:
         transform("")  # smoke check: did the user override transform()?
     except NotImplementedError:
@@ -204,6 +231,8 @@ def main() -> int:
     except Exception:
         pass  # other errors on empty input are fine
 
+    mode = "in-place" if SOURCE_FIELD == DEST_FIELD else f"cross-field ({SOURCE_FIELD} -> {DEST_FIELD})"
+    print(f"Mode: {mode}")
     print(f"Fetching all items in collection {COLLECTION_ID}...")
     items = list_all_items(COLLECTION_ID)
     print(f"  {len(items)} items total\n")
@@ -215,12 +244,13 @@ def main() -> int:
         return 0
     for it in affected:
         slug = it["fieldData"]["slug"]
-        body = it["fieldData"].get(FIELD_SLUG, "") or ""
-        print(f"  {slug}: {len(body):,} bytes")
+        src_len = len(_read_source(it))
+        dst_len = len(_read_dest(it))
+        print(f"  {slug}: source {src_len:,} bytes, current dest {dst_len:,} bytes")
     print()
 
     snapshot_all(affected)
-    print(f"Snapshotted {len(affected)} bodies to {SNAPSHOT_DIR}/\n")
+    print(f"Snapshotted {len(affected)} DEST_FIELD values to {SNAPSHOT_DIR}/\n")
 
     done = load_progress()
     todo = [it for it in affected if it["fieldData"]["slug"] not in done]
@@ -233,13 +263,13 @@ def main() -> int:
     # Diff the first item, request human approval before batching
     first = todo[0]
     slug = first["fieldData"]["slug"]
-    old_body = first["fieldData"][FIELD_SLUG]
-    new_body = transform(old_body)
-    diff_summary(slug, old_body, new_body)
+    before = _read_dest(first)
+    after = transform(_read_source(first))
+    diff_summary(slug, before, after)
 
     with open(f"{SNAPSHOT_DIR}/{slug}_NEW.html", "w") as f:
-        f.write(new_body)
-    print(f"\nFull transformed body for review: {SNAPSHOT_DIR}/{slug}_NEW.html")
+        f.write(after)
+    print(f"\nFull new DEST_FIELD value for review: {SNAPSHOT_DIR}/{slug}_NEW.html")
 
     ans = input("\nApprove this shape and stage push for all affected items? [y/N]: ").strip().lower()
     if ans != "y":
@@ -251,19 +281,18 @@ def main() -> int:
     for it in todo:
         slug = it["fieldData"]["slug"]
         item_id = it["id"]
-        body = it["fieldData"].get(FIELD_SLUG, "") or ""
-        new = transform(body)
-        if new == body:
-            continue  # idempotency: skip already-clean items
+        new = transform(_read_source(it))
+        if not new or new == _read_dest(it):
+            continue  # idempotency: skip no-ops
         payload = {
-            FIELD_SLUG: new,
+            DEST_FIELD: new,
             "name": it["fieldData"]["name"],
             "slug": slug,
         }
         try:
             echo = patch_item(COLLECTION_ID, item_id, payload)
-            echo_body = echo["fieldData"].get(FIELD_SLUG, "") or ""
-            issues = verify_after_push(new, echo_body, slug)
+            echo_dest = echo["fieldData"].get(DEST_FIELD, "") or ""
+            issues = verify_after_push(new, echo_dest, slug)
             if issues:
                 failed.append((slug, issues))
                 print(f"  FAIL {slug}: {issues[0]}")

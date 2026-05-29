@@ -14,6 +14,7 @@ Route based on the request. Read only the reference(s) needed for the specific t
 - **User wants to push content TO Webflow** (new content, updated content, from markdown/DB/CSV) → read `references/push-pattern.md`.
 - **User wants to run an editorial FIX across existing content** (strip a phrase, remove meta leaks, swap headings, bulk regex rewrite) → read `references/fix-pass-pattern.md`.
 - **User wants to REPAIR a legacy content shape across existing items** (convert old code blocks to a new shape, strip a brand suffix from `meta-title`, rename deprecated schema properties, restore tables stripped by Webflow ingest, rewrite an old domain in `href` values, any "convert shape A to shape B" job on stored CMS field values) → read `references/content-repair-pattern.md`.
+- **User wants to inject a SECONDARY JSON-LD block alongside the page's primary schema** (FAQPage on Q&A articles, HowTo on step-by-step guides, Product, Review, BreadcrumbList; via a dedicated CMS field and a one-time template embed) → read `references/faqpage-schema.md`.
 - **User hits a weird Webflow RichText behavior** (empty sections, stripped content, parser mysteries, list items that vanish) → read `references/webflow-gotchas.md`.
 - **User wants to BULK-GENERATE content from binaries via Claude** (alt text from images, summaries from PDFs, image categorization, screenshot QA — anything where Claude must SEE the file to produce the output) → read `references/vision-pipeline.md`.
 - **User needs to populate or update alt text on a Webflow multi-image field** (set-of-images, gallery, carousel — each image in the array has its own alt) → read `references/vision-pipeline.md` if alts need to be generated from looking at the images, OR `references/push-pattern.md#patching-multi-image-fields` if alts already exist and only need pushing.
@@ -209,6 +210,7 @@ references/
   push-pattern.md                     ← bulk push pattern, full push loop, multi-image field PATCH
   fix-pass-pattern.md                 ← six-step editorial fix pattern
   content-repair-pattern.md           ← shape repair on stored CMS field values (legacy markup migration)
+  faqpage-schema.md                   ← FAQPage and other secondary JSON-LD via a dedicated CMS field
   webflow-gotchas.md                  ← the gotchas with symptoms and fixes
   webflow-richtext-tables.md          ← HTML <table> in RichText (markdown tables don't work)
   vision-pipeline.md                  ← bulk content generation from binaries (alt text, summaries, categorization)
