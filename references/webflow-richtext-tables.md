@@ -8,7 +8,7 @@ Webflow's RichText parser strips bare `<table>` tags on ingest. The cells surviv
 
 ```html
 <div data-rt-embed-type="true">
-<table class="your-custom-class">
+<table>
   <thead>
     <tr><th>Col A</th><th>Col B</th><th>Col C</th></tr>
   </thead>
@@ -39,14 +39,13 @@ This is the failure mode behind the flattened "Choosing your @type" table observ
 The `data-rt-embed-type="true"` div is how Webflow serializes a Rich Text HTML-Embed node. Webflow does NOT reparse the contents of an embed; the inner HTML is stored raw and rendered raw. Inside the embed:
 
 - `<table>`, `<thead>`, `<tbody>`, `<tr>`, `<th>`, `<td>` all survive verbatim.
-- Custom classes survive (e.g., `class="ks-pricing-table"`).
 - Inline `style="..."` attributes survive.
 - HTML comments survive.
 - Whitespace and newlines between tags are fine; the whitespace-drop bug (`webflow-gotchas.md` #2) does NOT apply inside an embed.
 
 ## Styling
 
-Webflow does not auto-style raw embed contents. Define site-wide CSS targeting a custom class on `<table>` (e.g., `.ks-pricing-table`); that CSS is what gives the table borders, padding, header backgrounds, etc. Without a custom class plus site CSS, the table renders with browser-default styling.
+No class needed on `<table>`. Style with site-wide CSS that targets bare `<table>` elements inside the rich text wrapper (e.g., a rule on `.rich-text table { ... }` or the equivalent for your project). That keeps the markup clean and applies one consistent look across every table in the collection. A custom class is only needed for a one-off override on a specific table.
 
 ## Rules that matter
 
@@ -66,5 +65,5 @@ Webflow does not auto-style raw embed contents. Define site-wide CSS targeting a
 
 ## Verified
 
-- Karpi Studio blog `/blog/webflow-pricing`: 12 pricing tables, all stored as `<div data-rt-embed-type="true"><table class="ks-pricing-table">...</table></div>` and rendering live.
+- Karpi Studio blog `/blog/webflow-pricing`: 12 pricing tables, all wrapped in `<div data-rt-embed-type="true">` and rendering live.
 - `schema-glossary-types/organization`: bare `<table>` was stripped to a flattened paragraph (the failure mode); embed-wrapped replacement preserves the table structure on ingest and was confirmed in the stored HTML after PATCH.

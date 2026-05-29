@@ -25,7 +25,7 @@ Each entry below is a production failure we hit. Symptoms, cause, fix.
 </div>
 ```
 
-Style the table via site-wide CSS targeting a custom class on `<table>`; Webflow does not auto-style raw embed contents. `compact.py` is fine but not required inside the embed.
+Style the table via site-wide CSS that targets bare `<table>` inside rich text; no class needed. `compact.py` is fine but not required inside the embed.
 
 **See also:** `references/webflow-richtext-tables.md` for the full pattern, the styling note, exact API call structure, and a list of mistakes other agents make.
 
