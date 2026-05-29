@@ -8,13 +8,13 @@ Read this when:
 
 Each entry below is a production failure we hit. Symptoms, cause, fix.
 
-## 1. Markdown table syntax doesn't work, and bare HTML `<table>` is stripped
+## 1. Markdown table syntax doesn't work, and a bare HTML `<table>` renders broken
 
-**Symptom:** Markdown tables (`| col | col |` syntax) show as empty blank space on the rendered page. Bare HTML `<table>` pushes look fine in the GET response but render as a run-on paragraph live: all cell text concatenated with no row or column boundaries.
+**Symptom:** Markdown tables (`| col | col |` syntax) show as empty blank space on the rendered page. Bare HTML `<table>` pushes look fine in the GET response but render broken live — either flattened to a run-on paragraph (cell text concatenated, no row/column boundaries) or, in the current blog collection, the grid survives but renders completely unstyled (no borders, no padding, "looks broken on the front end").
 
-**Cause:** The Python `markdown` library does not convert GFM pipe tables to HTML by default, so they pass through as raw text. Separately, Webflow's RichText parser does not natively support `<table>` and strips the grid tags on ingest, leaving only the cell text inside a single `<p>`.
+**Cause:** The Python `markdown` library does not convert GFM pipe tables to HTML by default, so they pass through as raw text. Separately, Webflow does not treat a bare `<table>` in rich text as first-class: depending on the path it either drops the grid tags on ingest (leaving cell text in a single `<p>`) or keeps them but applies no styling. Two things fix it together — the embed wrapper makes the markup passthrough, and a site CSS rule scoped to the rich-text wrapper gives the table styling.
 
-**Fix:** Wrap the HTML `<table>` in a Rich Text HTML-Embed div. Contents inside `<div data-rt-embed-type="true">...</div>` are passthrough; the table tags survive verbatim:
+**Fix:** Wrap the HTML `<table>` in a Rich Text HTML-Embed div (passthrough), and ensure the site has CSS targeting tables inside the rich-text wrapper:
 
 ```html
 <div data-rt-embed-type="true">
@@ -25,9 +25,9 @@ Each entry below is a production failure we hit. Symptoms, cause, fix.
 </div>
 ```
 
-Style the table via site-wide CSS that targets bare `<table>` inside rich text; no class needed. `compact.py` is fine but not required inside the embed.
+No class on the `<table>`. Style via one site-wide rule scoped to the rich-text wrapper, targeting the bare tags (e.g. `.js-css-rich-text-block table { ... }`); an unstyled table is the #1 "table looks broken" cause even when the wrapper is correct. `compact.py` is fine but not required inside the embed.
 
-**See also:** `references/webflow-richtext-tables.md` for the full pattern, the styling note, exact API call structure, and a list of mistakes other agents make.
+**See also:** `references/webflow-richtext-tables.md` for the full pattern, the scoped-CSS styling block, the class-less migration sequence, exact API call structure, and a list of mistakes other agents make.
 
 ## 2. Whitespace between list tags drops children
 
