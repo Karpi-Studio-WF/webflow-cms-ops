@@ -4,11 +4,12 @@ A Claude skill for bulk-publishing and editorial fix passes on Webflow CMS. Buil
 
 ## What this is
 
-A single Claude skill that covers three related content operations on Webflow CMS:
+A single Claude skill that covers four related content operations on Webflow CMS:
 
 - **Bulk push** — send new or updated content from a local source (SQLite, markdown, CSV) to a Webflow CMS collection at scale, beyond what the MCP or Designer handle well.
 - **Editorial fix pass** — run a targeted rewrite across existing items (strip a phrase, remove meta-content leaks, swap a heading, rewrite formulaic openers) as a repeatable, resume-safe, rollback-friendly sweep.
 - **Vision pipeline** — bulk-generate content from binary assets (alt text from images, summaries from PDFs, image categorization) and push back as field updates, including the multi-image field array schema.
+- **Content shape repair**: reshape legacy markup on stored CMS field values to a new target shape across many items (legacy code blocks to round-trip-safe `<pre><code>`, brand suffix stripped from `meta-title`, deprecated schema property renames, broken tables restored, etc.). Workflow: audit, snapshot, transform with an idempotent pure function, diff, stage push, human publishes from the Designer.
 
 The skill handles the known gotchas that waste a first-time user's first production session: macOS SSL cert issues, the Webflow RichText whitespace-between-tags parser bug, slug soft-delete traps, background agent deadlocks, the 32MB request cap on cumulative image Reads, and more. Each is documented with symptoms and fixes in `references/webflow-gotchas.md`.
 
@@ -20,13 +21,15 @@ webflow-cms-ops/
 ├── references/
 │   ├── push-pattern.md              ← bulk push pattern, full push loop, multi-image field PATCH
 │   ├── fix-pass-pattern.md          ← six-step editorial fix pattern
+│   ├── content-repair-pattern.md    ← shape repair on stored CMS field values (legacy markup migration)
 │   ├── webflow-gotchas.md           ← gotchas with symptoms and fixes
 │   ├── webflow-richtext-tables.md   ← HTML <table> in RichText (markdown tables don't work)
 │   ├── vision-pipeline.md           ← bulk content generation from binaries (alt text, summaries)
 │   └── session-handoff.md           ← split a heavy batch across two chats via filesystem
 ├── scripts/
 │   ├── compact.py                   ← HTML compact helper (required before every push)
-│   └── push_template.py             ← standalone runnable push script
+│   ├── push_template.py             ← standalone runnable push script
+│   └── repair_template.py           ← standalone runnable repair script (content-repair-pattern)
 └── examples/
     └── minimal-example.md           ← end-to-end walkthrough for 10 markdown files
 ```

@@ -1,6 +1,6 @@
 ---
 name: webflow-cms-ops
-description: Production-tested skill for bulk-publishing and editorial fix passes on Webflow CMS. Handles the known gotchas — macOS SSL certs (certifi), the RichText whitespace-between-tags parser bug, resume-safe progress tracking, and 0.5s rate limiting. Use when pushing 20+ items, running editorial sweeps across a collection, or running any headless Webflow CMS op where the MCP or Designer are impractical. Triggers bulk publish Webflow, push markdown to Webflow CMS, sync content to Webflow, bulk edit CMS items, strip phrase across collection, editorial fix pass, CMS content sweep, programmatic Webflow content ops.
+description: Production-tested skill for bulk-publishing, editorial fix passes, and content shape repair on Webflow CMS. Handles the known gotchas — macOS SSL certs (certifi), the RichText whitespace-between-tags parser bug, resume-safe progress tracking, and 0.5s rate limiting. Use when pushing 20+ items, running editorial sweeps across a collection, or running any headless Webflow CMS op where the MCP or Designer are impractical. Triggers bulk publish Webflow, push markdown to Webflow CMS, sync content to Webflow, bulk edit CMS items, strip phrase across collection, editorial fix pass, CMS content sweep, programmatic Webflow content ops.
 ---
 
 # Webflow CMS Ops
@@ -13,6 +13,7 @@ Route based on the request. Read only the reference(s) needed for the specific t
 
 - **User wants to push content TO Webflow** (new content, updated content, from markdown/DB/CSV) → read `references/push-pattern.md`.
 - **User wants to run an editorial FIX across existing content** (strip a phrase, remove meta leaks, swap headings, bulk regex rewrite) → read `references/fix-pass-pattern.md`.
+- **User wants to REPAIR a legacy content shape across existing items** (convert old code blocks to a new shape, strip a brand suffix from `meta-title`, rename deprecated schema properties, restore tables stripped by Webflow ingest, rewrite an old domain in `href` values, any "convert shape A to shape B" job on stored CMS field values) → read `references/content-repair-pattern.md`.
 - **User hits a weird Webflow RichText behavior** (empty sections, stripped content, parser mysteries, list items that vanish) → read `references/webflow-gotchas.md`.
 - **User wants to BULK-GENERATE content from binaries via Claude** (alt text from images, summaries from PDFs, image categorization, screenshot QA — anything where Claude must SEE the file to produce the output) → read `references/vision-pipeline.md`.
 - **User needs to populate or update alt text on a Webflow multi-image field** (set-of-images, gallery, carousel — each image in the array has its own alt) → read `references/vision-pipeline.md` if alts need to be generated from looking at the images, OR `references/push-pattern.md#patching-multi-image-fields` if alts already exist and only need pushing.
@@ -20,7 +21,7 @@ Route based on the request. Read only the reference(s) needed for the specific t
 
 Multiple references may apply to one task. For example, running a fix pass uses both `fix-pass-pattern.md` and `push-pattern.md` (the fix pass ends with a push step).
 
-## Principles that apply to every push and every fix pass
+## Principles that apply to every push, fix pass, and content repair
 
 All eight are non-negotiable. Each exists because skipping it caused a production failure we've hit.
 
@@ -207,6 +208,7 @@ SKILL.md                              ← this file (always loaded)
 references/
   push-pattern.md                     ← bulk push pattern, full push loop, multi-image field PATCH
   fix-pass-pattern.md                 ← six-step editorial fix pattern
+  content-repair-pattern.md           ← shape repair on stored CMS field values (legacy markup migration)
   webflow-gotchas.md                  ← the gotchas with symptoms and fixes
   webflow-richtext-tables.md          ← HTML <table> in RichText (markdown tables don't work)
   vision-pipeline.md                  ← bulk content generation from binaries (alt text, summaries, categorization)
@@ -214,6 +216,7 @@ references/
 scripts/
   compact.py                          ← HTML compact helper (required before every push)
   push_template.py                    ← standalone runnable push script, edit config and run
+  repair_template.py                  ← standalone runnable repair script (content-repair-pattern), edit config and run
 examples/
   minimal-example.md                  ← end-to-end walkthrough for 10 markdown files
 ```
