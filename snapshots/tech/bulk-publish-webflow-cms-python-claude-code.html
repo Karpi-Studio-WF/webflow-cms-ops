@@ -1,0 +1,119 @@
+<p>Webflow's CMS wasn't built for 300-article bulk uploads. CSV imports permanently reserve slugs on soft-delete, making re-imports dangerous. The <a href="/blog/webflow-mcp-claude">Webflow MCP</a> works for small batches but fails in background <a href="/blog/i-tried-replacing-webflow-with-claude-code">Claude Code</a> agents because interactive permission prompts can't reach a headless process. Manual editing in the Designer doesn't scale past a few dozen items.</p><p>We published <a href="/blog/223-schema-articles-claude-code">281 articles to Webflow CMS</a> with 796 API writes and zero failures. This is the playbook: the Python patterns that actually work at scale, the Webflow gotchas that cost us iterations, and how Claude Code fits into the pipeline.</p><h2>What this guide is (and isn't)</h2><p><strong>Is:</strong> A concrete, runnable approach for pushing content from any source (markdown, database, spreadsheet) to Webflow CMS via the Data API. Includes the exact gotchas we hit and how to avoid them.</p><p><strong>Isn't:</strong> A Webflow API reference. Read <a href="https://developers.webflow.com/data/reference/cms/collection-items/staged-items/publish-item">Webflow's docs</a> for the official surface. This guide is about what the docs don't tell you.</p><p><strong>Audience:</strong> Developers or technical marketers who want to bulk-publish beyond what the MCP, CSV import, or Designer can handle. You should be comfortable reading Python and have a Webflow site with API access.</p><h2>Why Python + Data API instead of the MCP</h2><p>The Webflow MCP is the right tool for conversational, human-in-the-loop content editing through Claude Code. For 20-item pushes, use it.</p><p>For bulk operations (50+ items, batched updates, fix passes across a corpus, scheduled publishing), use Python with the Data API directly. Reasons:</p><ul><li><strong>Background/headless execution.</strong> Claude Code agents running in the background cannot receive interactive permission prompts. The MCP's permission model breaks. A Python script has no such constraint.</li><li><strong>Rate-limit control.</strong> You want deterministic 0.5s between calls, not whatever pacing the MCP chooses. Webflow's 150 req/min cap is easy to hit otherwise.</li><li><strong>Error handling.</strong> When call 87 of 281 fails, you want to catch the exception, log it, skip to item 88, and keep a progress file for resume. Agent-driven execution won't do this reliably.</li><li><strong>Cost.</strong> No LLM tokens spent on each push. The logic is deterministic; an agent designing the push is valuable, an agent executing it is waste.</li></ul><p>Agents are for reasoning. Scripts are for execution. When the task is "do the same thing 281 times with different data," write a script.</p><h2>Setup: auth, collection IDs, field slugs</h2><p>You need three things before writing any push code.</p><h3>1. API token</h3><p>Generate at <code>Site Settings → Apps &amp; Integrations → API Access → Generate API token</code>. Give it "CMS read and write" scope. Save it somewhere safe; Webflow will never show it again.</p><h3>2. Collection IDs</h3><p>Every <a href="/blog/webflow-cms-revolutionizing-the-world-of-content-management">CMS collection</a> has a unique ID. Find it in the URL of the Collections page: <code>https://webflow.com/design/your-site?tab=site-content&amp;collection=69d78318b11f74482c3ac35d</code>. The <code>collection=</code> value is the ID.</p><p>Or, programmatically:</p><pre><code class="language-html">import urllib.request, ssl, certifi, json
+API_TOKEN = &quot;YOUR_TOKEN_HERE&quot;
+SITE_ID = &quot;YOUR_SITE_ID&quot;
+ctx = ssl.create_default_context(cafile=certifi.where())
+req = urllib.request.Request(
+    f&quot;https://api.webflow.com/v2/sites/{SITE_ID}/collections&quot;,
+    headers={&quot;Authorization&quot;: f&quot;Bearer {API_TOKEN}&quot;, &quot;Accept&quot;: &quot;application/json&quot;},
+)
+with urllib.request.urlopen(req, context=ctx) as resp:
+    for coll in json.loads(resp.read())[&quot;collections&quot;]:
+        print(f&quot;{coll['id']}  {coll['displayName']}  (slug: {coll['slug']})&quot;)
+
+</code></pre><h3>3. Field slugs (the not-obvious step)</h3><p>Every field in a Webflow collection has a <strong>slug</strong> that differs from its display name. "Meta Description" becomes <code>meta-description</code>. "Body" might be <code>body</code> or <code>body-2</code> depending on when the field was created. <strong>This trips up everyone</strong> and silently wastes hours when you push to the wrong field.</p><p>Get the exact slugs by fetching one collection item and inspecting its <code>fieldData</code>:</p><pre><code class="language-html">req = urllib.request.Request(
+    f&quot;https://api.webflow.com/v2/collections/{COLLECTION_ID}/items?limit=1&quot;,
+    headers={&quot;Authorization&quot;: f&quot;Bearer {API_TOKEN}&quot;, &quot;Accept&quot;: &quot;application/json&quot;},
+)
+with urllib.request.urlopen(req, context=ctx) as resp:
+    item = json.loads(resp.read())[&quot;items&quot;][0]
+    print(list(item[&quot;fieldData&quot;].keys()))
+
+</code></pre><p><strong>Document these slugs somewhere permanent.</strong> In our project, <code>CLAUDE.md</code> has:</p><pre><code class="language-html">Types collection body field: body-2
+Terms collection body field: body
+
+</code></pre><p>This mismatch cost us a round trip when a QA agent queried <code>body-2</code> on the Terms collection, got 0 content, and falsely flagged 100 articles as broken.</p><h2>The push pattern</h2><p>A minimal push script. This is production code that has pushed over 1,000 items with zero failures.</p><pre><code class="language-html">import sqlite3, json, time, urllib.request, ssl, os, certifi
+
+API_TOKEN = &quot;YOUR_TOKEN_HERE&quot;
+COLLECTION_ID = &quot;YOUR_COLLECTION_ID&quot;
+BODY_FIELD = &quot;body&quot;   # or &quot;body-2&quot;, whatever your collection uses
+DB_PATH = &quot;/absolute/path/to/content.db&quot;
+PROGRESS_FILE = &quot;/tmp/my_push_progress.txt&quot;
+
+# macOS Python cannot find system certs — use certifi
+ctx = ssl.create_default_context(cafile=certifi.where())
+
+# Resume support
+done = set()
+if os.path.exists(PROGRESS_FILE):
+    with open(PROGRESS_FILE) as f:
+        done = set(l.strip() for l in f if l.strip())
+
+conn = sqlite3.connect(DB_PATH, timeout=30)
+c = conn.cursor()
+c.execute(&quot;SELECT slug, webflow_id, body_html, meta_title, meta_description FROM my_items ORDER BY slug&quot;)
+rows = [r for r in c.fetchall() if r[0] not in done]
+print(f&quot;{len(rows)} items to push ({len(done)} already done)&quot;)
+
+pushed, failed = 0, []
+for slug, wf_id, html, mt, md in rows:
+    if not wf_id or not html or len(html) &lt; 100:
+        print(f&quot;  SKIP {slug}: missing webflow_id or empty body&quot;)
+        continue
+    try:
+        payload = {&quot;fieldData&quot;: {
+            BODY_FIELD: html,
+            &quot;meta-title&quot;: mt or &quot;&quot;,
+            &quot;meta-description&quot;: md or &quot;&quot;,
+        }}
+        data = json.dumps(payload).encode(&quot;utf-8&quot;)
+        req = urllib.request.Request(
+            f&quot;https://api.webflow.com/v2/collections/{COLLECTION_ID}/items/{wf_id}&quot;,
+            data=data,
+            headers={
+                &quot;Authorization&quot;: f&quot;Bearer {API_TOKEN}&quot;,
+                &quot;Content-Type&quot;: &quot;application/json&quot;,
+                &quot;Accept&quot;: &quot;application/json&quot;,
+            },
+            method=&quot;PATCH&quot;,
+        )
+        with urllib.request.urlopen(req, context=ctx) as resp:
+            json.loads(resp.read().decode(&quot;utf-8&quot;))
+        pushed += 1
+        with open(PROGRESS_FILE, &quot;a&quot;) as f:
+            f.write(slug + &quot;\n&quot;)
+        if pushed % 25 == 0 or pushed == len(rows):
+            print(f&quot;  {pushed}/{len(rows)}: {slug}&quot;)
+        time.sleep(0.5)  # respect Webflow's 150 req/min cap
+    except Exception as e:
+        print(f&quot;  FAIL {slug}: {e}&quot;)
+        failed.append(slug)
+
+conn.close()
+print(f&quot;\nPushed {pushed}/{len(rows)}, failed {len(failed)}&quot;)
+
+</code></pre><p>Key design choices:</p><ul><li><strong>Absolute DB path.</strong> Background shells reset cwd; relative paths fail mysteriously.</li><li><strong><code>certifi.where()</code> for SSL context.</strong> macOS Python has no system cert bundle. Every urllib call without this will fail with <code>CERTIFICATE_VERIFY_FAILED</code> on mac. No warning, just a cryptic traceback.</li><li><strong>Progress file.</strong> If the script dies at item 150, restart and it skips to 151. Do not build this with "retry the whole batch" logic. Resume on a line-delimited file is cheaper and more robust.</li><li><strong>0.5s delay.</strong> Webflow allows 150 req/min. At 0.5s per request you'll run at 120 req/min, with safety margin for burst requests from other clients on the same token.</li><li><strong>Skip conditions.</strong> If <code>html</code> is shorter than some sanity threshold, skip rather than push. You'll be glad you did when a regex bug produces empty bodies and you only realize after 200 items.</li></ul><h2>The gotchas we paid to learn</h2><h3>1. Webflow RichText silently strips unsupported tags</h3><p>The RichText field only accepts a specific subset of HTML. Anything else is dropped without warning:</p><ul><li><code>&lt;table&gt;</code> and children — stripped entirely</li><li><code>&lt;script&gt;</code> — stripped</li><li><code>&lt;iframe&gt;</code> — stripped</li><li>Custom embeds — must be added via the Designer API, not the Data API</li></ul><p>Convert tables to bullet lists before generating HTML. For inline scripts or embeds, add them in the page template (not the CMS item).</p><h3>2. Whitespace between <code>&lt;ul&gt;</code>/<code>&lt;li&gt;</code> tags breaks lists</h3><p>This one took a full day to find. Webflow's RichText parser silently drops list children when whitespace separates <code>&lt;ul&gt;</code>, <code>&lt;li&gt;</code>, and <code>&lt;/ul&gt;</code> tags.</p><p>The Python <code>markdown</code> library outputs <code>&lt;ul&gt;\n&lt;li&gt;...&lt;/li&gt;\n&lt;/ul&gt;</code> by default. Webflow accepts the payload, returns 200, and the Data API GET echoes the HTML back — so every check looks clean. But the editor's internal block representation has no bullet nodes, and the rendered live page shows empty sections.</p><p>Fix: compact HTML before pushing. Strip whitespace between block tags while preserving content inside <code>&lt;pre&gt;</code> code blocks (so JSON examples keep formatting):</p><pre><code class="language-html">import re
+
+def compact(html):
+    out, i = [], 0
+    while i &lt; len(html):
+        pre = re.search(r'&lt;pre[^&gt;]*&gt;[\s\S]*?&lt;/pre&gt;', html[i:])
+        if pre:
+            out.append(re.sub(r'&gt;\s+&lt;', '&gt;&lt;', html[i:i + pre.start()]))
+            out.append(pre.group(0))
+            i += pre.end()
+        else:
+            out.append(re.sub(r'&gt;\s+&lt;', '&gt;&lt;', html[i:]))
+            break
+    return ''.join(out)
+
+</code></pre><p>Run this on every HTML body before pushing. This bug is not in Webflow's API docs.</p><h3>3. The Data API GET lies about RichText</h3><p>A Webflow RichText field has two internal representations: the HTML source (what you PATCHed) and the node tree (what the editor renders). The API GET returns the HTML source. If Webflow's parser failed to convert your HTML into nodes, the GET will still echo the HTML back as if everything is fine.</p><p><strong>Visual verification is required.</strong> Either open the CMS editor and look at the field, or fetch the live page and grep for the expected element. Do not trust the API GET as evidence of correct rendering.</p><h3>4. Slugs reserve permanently on soft-delete</h3><p>When you "delete" a CMS item in the Designer, Webflow moves it to a trash state. Its slug remains reserved. If you import or create a new item with the same slug, Webflow assigns a suffixed slug (<code>product-62276</code> instead of <code>product</code>).</p><p>Worse: the API rejects updates that would conflict with a reserved slug, with unhelpful error messages.</p><p><strong>Fix if hit:</strong> create a new collection with final names and slugs, migrate items via API, update every internal link. We did this once. Never again.</p><p><strong>Avoid:</strong> lock the collection structure before any bulk content import. Name collections and slugs with their final production values from day one.</p><h3>5. MultiReference fields can't change their target collection</h3><p>If a <code>related</code> MultiReference field on Collection A points to Collection B, and you later create a new Collection B' that should replace B, the MultiReference cannot be retargeted via API or Designer. You must delete the MultiReference field, create a new one pointing to B', and re-populate every item's references.</p><p><strong>Avoid:</strong> same as #4. Design the collection graph before content creation.</p><h3>6. Background agents can't receive permission prompts</h3><p>If you launch a Claude Code background agent that uses the Webflow MCP, every tool call requiring permission will block indefinitely. The agent halts. Foreground agents handle this correctly because the user sees the permission dialog.</p><p><strong>Fix:</strong> bulk Webflow operations always run as Python scripts from a foreground agent or a terminal, never from a background Claude Code agent.</p><h3>7. RichText HTML encoding for CMS bindings</h3><p>When writing a template with CMS field bindings (e.g., inside a <code>&lt;script type="application/ld+json"&gt;</code> block on a collection page template), Webflow expects its own binding syntax:</p><pre><code class="language-html">{{wf {&amp;quot;path&amp;quot;:&amp;quot;slug&amp;quot;,&amp;quot;type&amp;quot;:&amp;quot;PlainText&amp;quot;\} }}
+
+</code></pre><p>You can type this literally in Designer's custom code editor, or use the "Add Field" picker to insert it. Getting this syntax right matters — a malformed binding renders as literal <code>{{wf ...}}</code> in the output and breaks any <a href="/webflow-aeo/advanced-webflow-aeo-mastering-schema-cms-structure">JSON-LD or structured data</a> that wraps it.</p><h2>Pattern: markdown → HTML → compact → push</h2><p>The full pipeline for a single article:</p><pre><code class="language-html">import re, sqlite3, markdown
+
+def to_compact_html(body_md):
+    # Strip YAML frontmatter if present
+    md_clean = re.sub(r'^---[\s\S]*?---', '', body_md).strip()
+    # Render to HTML
+    html = markdown.markdown(md_clean, extensions=['tables', 'fenced_code'])
+    # Compact for Webflow RichText
+    return compact(html)
+
+conn = sqlite3.connect(DB_PATH, timeout=30)
+c = conn.cursor()
+c.execute(&quot;SELECT id, body_md FROM my_items&quot;)
+for fid, md in c.fetchall():
+    html = to_compact_html(md)
+    c.execute(&quot;UPDATE my_items SET body_html = ? WHERE id = ?&quot;, (html, fid))
+conn.commit()
+
+</code></pre><p>Run this whenever <code>body_md</code> changes. Then the push script from earlier reads <code>body_html</code> and ships it. Separate the "generate HTML" step from the "push" step so you can regenerate without pushing, inspect the HTML in the DB, and push only touched items.</p><h2>Pattern: the fix-pass architecture</h2><p>When you discover a systemic content issue post-publish (a formulaic phrase, a meta-content leak, a rendering bug), the pattern is:</p><ol><li><strong>Identify scope</strong> with a SQL query. <code>SELECT slug FROM my_items WHERE body_md LIKE '%problem-pattern%'</code>. Count first. Never run a transform on the full corpus without knowing how many items will change.</li><li><strong>Write the transform</strong> as a pure function. <code>def fix(md): return ...</code> takes markdown, returns markdown. No side effects. Unit-test it on 3-5 representative items before touching the DB.</li><li><strong>Apply the transform</strong> in a transaction. Loop over affected items, call <code>fix()</code>, <code>UPDATE my_items SET body_md = ? WHERE id = ?</code>. Track touched slugs in <code>/tmp/fix_touched.txt</code>.</li><li><strong>Regenerate HTML</strong> for only the touched slugs. No need to regen the full corpus.</li><li><strong>Push to Webflow</strong> using the push script, reading the touched-slugs file.</li><li><strong>Spot-check</strong> on the live CMS editor and rendered page for 3-5 slugs.</li></ol><p>This is the Phase 6 pattern from our <a href="/blog/223-schema-articles-claude-code">schema glossary project</a>. We ran six such passes covering rendering bugs, meta-content leaks, em dashes, heading doubling, formulaic openers, and placeholder brand names. Total: 796 writes, zero failures, resume-safe for every pass.</p><h2>Where Claude Code fits</h2><p>Claude Code excels at the parts that require judgment. It does not replace the Python script. Use Claude Code for:</p><ul><li><strong>Designing the pipeline.</strong> "I want to push 500 markdown files to Webflow with fact-checking and link validation. Plan the phases." Claude Code returns a multi-phase agent spec.</li><li><strong>Writing the fix prompts.</strong> "I've noticed every article ends with the phrase 'in conclusion'. Write a regex to remove it while preserving code blocks." Claude Code drafts the transform with edge cases.</li><li><strong>Reviewing scope before push.</strong> "Before I push 281 items, query the DB to tell me how many have valid HTML, how many are shorter than 500 chars, and which ones contain suspicious patterns." Claude Code runs the analysis.</li><li><strong>Investigating anomalies.</strong> "20 items came back with 400 errors. Inspect the responses and cluster by cause." Claude Code summarizes.</li></ul><p>Do not use Claude Code to execute the bulk push loop. An agent calling the Webflow MCP 281 times is:</p><ul><li>Slow (each tool call has overhead)</li><li>Expensive (tokens per call)</li><li>Unreliable (context drift, permission prompts in background agents)</li><li>Unrecoverable (no progress tracking)</li></ul><p>Claude Code designs the script. Python runs the script.</p><h2>A worked example</h2><p>The schema glossary project had 58 type overview articles and 223 field reference articles, living in a SQLite database (<code>glossary.db</code>). Every article had <code>body_md</code>, <code>body_html</code>, <code>meta_title</code>, <code>meta_description</code>, and a pre-assigned <code>webflow_id</code> from an earlier CMS item creation.</p><p>Two collections in Webflow:<br>- Types: <br><br>- Terms: <br></p><p>The initial upload took 2.5 minutes for 281 items at 0.5s per push. Subsequent fix passes each took 20 seconds to 2 minutes depending on scope. Total time spent on Webflow pushes across the entire project: ~15 minutes of wall clock, spread across 12 push operations.</p><p>If you want the full push scripts and the fix-pass pattern packaged as a reusable Claude skill (with all seven gotchas documented and a runnable Python push template), see <a href="https://github.com/Karpi-Studio-WF/webflow-cms-ops">github.com/Karpi-Studio-WF/webflow-cms-ops</a>.</p><h2>Bottom line</h2><ul><li>Use the Data API directly via Python for anything beyond 20 items.</li><li><code>certifi.where()</code> for SSL context on mac. Always.</li><li>Compact HTML before pushing. No whitespace between list tags.</li><li>Track progress in a file. Resume on restart.</li><li>Script executes, Claude Code designs.</li><li>Visual verification is non-negotiable. The API will lie to you.</li></ul><p>After 796 production writes across our schema glossary, the only failure mode we ever hit was the whitespace bug — and that was a content parsing issue, not a push-script issue. The pattern above is battle-tested.</p><p><em>Karpi Studio builds production content pipelines for Webflow teams as part of our </em><a href="/services/answer-engine-optimization-for-webflow"><em>AEO retainer</em></a><em>. If your CMS project is hitting the limits of manual editing or CSV imports, </em><a href="/contact"><em>get in touch</em></a><em>.</em></p>
