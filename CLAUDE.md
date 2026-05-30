@@ -43,6 +43,7 @@ references/
   session-handoff.md         # Multi-chat batching for large jobs
 scripts/
   compact.py                 # HTML whitespace stripper (required for all RichText pushes)
+  code_block_repair.py       # Pure code-block transforms — promote legacy code blocks, add language- classes (library)
   push_template.py           # Standalone push script (edit CONFIG block then run)
   repair_template.py         # Standalone repair script (content-repair-pattern); edit CONFIG block then run
 examples/
@@ -89,7 +90,7 @@ Split heavy batches across two chat sessions when the 32MB request cap is near. 
 - **Auth:** Bearer token — never commit tokens; set in the CONFIG block of scripts
 - **Rate limit:** 150 req/min; scripts enforce 0.5s delay
 - **RichText field slug:** Often `body`, but may be `body-2` — verify by fetching one live item and inspecting `fieldData` keys
-- **Tables:** markdown table syntax doesn't work, AND bare `<table>` is stripped on ingest. Wrap every table in a Rich Text HTML-Embed div — `<div data-rt-embed-type="true">...</div>` — and the grid survives verbatim (see `references/webflow-richtext-tables.md`)
+- **Tables:** markdown table syntax doesn't work, AND a bare `<table>` renders broken on the live page (flattened, or surviving but unstyled — the API GET hides it). A table needs BOTH: the `<div data-rt-embed-type="true">...</div>` embed wrapper (passthrough so the grid survives) AND a site CSS rule scoped to the rich-text wrapper targeting the bare tags (e.g. `.rich-text-body table`). Tables carry no class; styling hooks the tags. Verified against a live item with 12 embed-wrapped tables (see `references/webflow-richtext-tables.md`)
 - **Code blocks:** block-level code must be `<pre><code>` at the RichText root, never `<p><code>` (which breaks highlighting and renders as plain text). Single inline tokens stay as `<code>` inside `<p>`. Run `promote_code_blocks()` (defined in `SKILL.md`) as the final transform *after* `compact.py`. On sites with a syntax highlighter, push the exact shape `<pre><code class="language-X">…\n</code></pre>` or the Designer silently reverts it on the next open (see `SKILL.md`, "Code block formatting in rich text")
 - **Multi-image field PATCH:** Must spread `**img` to preserve `fileId` and `url`; only override the target field
 

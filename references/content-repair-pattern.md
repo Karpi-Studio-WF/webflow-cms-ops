@@ -23,7 +23,7 @@ Content repair pulls the current value from the CMS, derives the new value purel
 
 ### 1. Define the target shape
 
-Write the exact new shape down. Verify it against one live item (e.g., the Schema Glossary `book` item for the code-block shape, or the live `/blog/webflow-pricing` tables for the embed-wrapper shape). Capture attribute-quoting style, entity escaping, internal whitespace, and any required wrappers.
+Write the exact new shape down. Verify it against one live item (e.g., a live item already in the round-trip-safe code-block shape, or a live item that has embed-wrapped tables). Capture attribute-quoting style, entity escaping, internal whitespace, and any required wrappers.
 
 If a Webflow Designer round-trip is part of the workflow (the human opens, eyeballs, publishes), confirm the target shape survives a Designer open + publish round-trip. Non-conforming variants get silently rewritten back to legacy.
 
@@ -56,6 +56,8 @@ for it in affected:
 ```
 
 If the count is surprisingly high or low, stop and investigate. Do not push.
+
+**Verify the field slug per collection before trusting the count.** The RichText field can differ between collections on the same site: one collection may store the article in `body-2`, another in `body`. Auditing the wrong field silently returns zero changes. Inspect `fieldData` keys on one live item from each collection first.
 
 ### 4. Snapshot every body to disk
 
@@ -111,7 +113,7 @@ That's the only project-specific code. The harness handles audit, snapshot, diff
 
 ## Worked example: code-block migration
 
-The Schema Glossary code-block migration. Replaces legacy `<p><code>...with <br>/&nbsp;...</code></p>` with the round-trip-safe `<pre><code class="language-X">CONTENT\n</code></pre>` shape from `SKILL.md`.
+This worked example replaces legacy `<p><code>...with <br>/&nbsp;...</code></p>` with the round-trip-safe `<pre><code class="language-X">CONTENT\n</code></pre>` shape from `SKILL.md`.
 
 ```python
 import re
@@ -126,11 +128,17 @@ def _detect_language(text_decoded: str) -> str:
     s = text_decoded.lstrip()
     if not s:
         return "language-html"
+    # Genuine HTML: block opens with a tag, e.g. a <script type="application/ld+json">
+    # embed. Keep language-html so the markup itself is highlighted.
     if s.startswith(("<script", "<style", "<html", "<!DOCTYPE", "<!--")):
         return "language-html"
     if re.search(r'\bdef \w|\bimport \w|^class \w', s, re.MULTILINE):
         return "language-python"
-    if s[:1] in "{[" and re.search(r'"[\w@$-]+"\s*:', s):
+    # JSON in two shapes:
+    #   full object/array: opens with { or [ and contains a "key":
+    #   JSON-LD fragment:  opens directly with a quoted key, e.g.  "sameAs": [
+    #                      (no leading { so the first-char test alone misses it)
+    if (s[:1] in "{[" and re.search(r'"[\w@$-]+"\s*:', s)) or re.match(r'"[\w@$-]+"\s*:', s):
         return "language-json"
     return "language-html"
 
@@ -155,7 +163,20 @@ def transform(field_value: str) -> str:
     return P_CODE_RE.sub(repl, field_value)
 ```
 
-Verified against the Schema Glossary `book` item with 6 unit tests: legacy-to-target conversion, idempotency, inline `<code>` untouched, no-op on non-legacy `<p><code>`, language detection across json / html / python / fallback, exact-shape match. The harness in `scripts/repair_template.py` drives audit through stage with this transform plugged in.
+Verified with unit tests (legacy-to-target conversion, idempotency, inline `<code>` untouched, no-op on non-legacy `<p><code>`, language detection across json / html / python / fallback, exact-shape match) and applied in production across two collections. The harness in `scripts/repair_template.py` drives audit through stage with this transform plugged in; `scripts/code_block_repair.py` is the generalized, multi-language version of the same transform (it detects more languages and falls back to `plaintext`), ready to drop straight into the harness as its `transform()`.
+
+### Detecting the language class
+
+The `language-` class is the whole point: highlight.js only fires on `<pre><code class="language-X">`, so a missing or wrong class means no highlighting. `_detect_language` is a deliberately small heuristic, not a parser:
+
+- opens with `<script` / `<style` / `<!DOCTYPE` etc.: `language-html`
+- a `def `/`import `/`class ` signal: `language-python`
+- opens with `{` or `[`, or directly with a quoted key like `"sameAs":` (a JSON-LD fragment): `language-json`
+- anything else: `language-html` (fallback)
+
+The fragment rule matters for schema content: property snippets shown in isolation (`"founder": [ ... ]`, `"address": { ... }`) open with a quoted key rather than `{`, so without it they fall to the html fallback and render miscolored. Because it is a heuristic, the audit table is the safety net: print the detected language per block on the first item of each collection and eyeball it before staging; if a block lands wrong, tune the detector or force a language for that collection, then re-audit. This is a per-collection check, not a one-time guarantee.
+
+Separate from the legacy migration, also scan for bare `<pre><code>` blocks that already exist but carry no `language-` class: they will not highlight. Some are safe to class; some are not, e.g. blocks holding live Webflow `{{wf ...}}` field bindings (a body re-push risks corrupting the binding) or non-code preformatted text (a language class would be a mislabel). Decide per block.
 
 ## Other transforms the same harness drives
 
@@ -165,7 +186,7 @@ One-liners showing the framework's reach. Same audit / snapshot / diff / stage /
 
 ```python
 def transform(v: str) -> str:
-    return re.sub(r'\s*\|\s*Karpi Studio\s*$', '', v)
+    return re.sub(r'\s*\|\s*Example Co\s*$', '', v)
 ```
 
 **Rename deprecated schema property `founders` to `founder`:**
@@ -204,9 +225,9 @@ def transform(v: str) -> str:
 Never batch multiple unrelated repairs into one pass. One pass per logical shape change:
 
 ```
-Pass 1: code blocks legacy -> round-trip-safe   (Schema Glossary Types + Terms)
-Pass 2: brand suffix strip on meta-title        (Blog + AEOs + CROs)
-Pass 3: founders -> founder rename              (Schema Glossary Types subset)
+Pass 1: code blocks legacy -> round-trip-safe   (across two collections)
+Pass 2: brand suffix strip on meta-title        (several collections)
+Pass 3: founders -> founder rename              (one collection, a subset)
 ```
 
 Each pass owns its progress file (`/tmp/repair_<pass>_progress.txt`) for resume safety. If pass 2 breaks mid-batch, you don't need to rerun pass 1.

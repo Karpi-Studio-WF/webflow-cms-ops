@@ -11,3 +11,8 @@ __pycache__/
 venv/
 .idea/
 .vscode/
+
+# Per-run CMS snapshots / rollback sources are project content, not toolkit
+# artifacts. Templates default to /tmp (already ignored above); this also keeps
+# fill-in runs that write into the repo from committing live article HTML.
+snapshots/

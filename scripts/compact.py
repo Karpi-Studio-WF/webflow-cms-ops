@@ -61,10 +61,11 @@ def to_compact_html(md: str) -> str:
     Render markdown to HTML and apply the compact() helper.
 
     Strips leading YAML frontmatter if present. Uses the 'tables' and 'fenced_code'
-    markdown extensions. Tables are rendered as <table>, but bare <table> is stripped
-    by Webflow RichText on ingest. Wrap tables in a
-    <div data-rt-embed-type="true">...</div> Rich Text HTML-Embed to preserve them
-    (see references/webflow-richtext-tables.md). Bullet lists remain a fine fallback.
+    markdown extensions. Tables are rendered as <table>, but a bare <table> renders
+    broken in Webflow RichText (flattened, or surviving but unstyled). Wrap tables in a
+    <div data-rt-embed-type="true">...</div> Rich Text HTML-Embed AND style them via
+    site CSS scoped to the rich-text wrapper (see references/webflow-richtext-tables.md).
+    Bullet lists remain a fine fallback.
 
     Args:
         md: Markdown source. May include leading YAML frontmatter.

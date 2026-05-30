@@ -74,7 +74,8 @@ def transform(source_value: str) -> str:
     Return "" if this item produces no destination value (the harness skips it).
 
     Worked examples in references/content-repair-pattern.md and
-    references/faqpage-schema.md."""
+    references/faqpage-schema.md. A ready-made multi-language code-block
+    transform (drop-in for the in-place case) lives in scripts/code_block_repair.py."""
     raise NotImplementedError("Replace transform() with your transformation logic.")
 
 
