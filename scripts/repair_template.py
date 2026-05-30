@@ -58,8 +58,9 @@ def transform(field_value: str) -> str:
       - Conservative: only touch your target legacy shape.
       - Testable: easy to assert on sample inputs.
 
-    Worked example (Schema Glossary code-block migration) is documented in
-    `references/content-repair-pattern.md`."""
+    A ready-made multi-language code-block transform lives in
+    `scripts/code_block_repair.py`; the full audit-through-stage pattern is
+    documented in `references/content-repair-pattern.md`."""
     raise NotImplementedError("Replace transform() with your transformation logic.")
 
 
