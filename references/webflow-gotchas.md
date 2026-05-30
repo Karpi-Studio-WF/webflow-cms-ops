@@ -205,3 +205,9 @@ PATCH updates go to the staged draft. The item's `lastPublished` timestamp updat
 ### Field slug mismatches
 
 Field slugs differ from display names: "Meta Description" → `meta-description`. "Body" may be `body` or `body-2` depending on when it was created. Pushing to a non-existent field slug returns 200 but does nothing. Verify slugs by GET'ing one item and inspecting `fieldData` keys before pushing.
+
+### Working with the Webflow MCP
+
+If you're driving Webflow via the MCP (`data_cms_tool`, `data_pages_tool`, `element_tool`, etc.) instead of the REST API: call `webflow_guide_tool` ONCE at the start of the session, before any other Webflow MCP call. The MCP server expects it; subsequent tool calls without it fail with a guideline-loading error. The guide prints the available actions, naming conventions, and pre-call rules; one call per session is enough.
+
+This does not apply when calling the Webflow Data API directly via Python (the REST endpoints have no such handshake). Only the MCP path needs it.
