@@ -124,7 +124,7 @@ conn.close()
 print(f"\nPushed {pushed}/{len(rows)}, failed {len(failed)}")
 ```
 
-Or use `scripts/push_template.py` — edit the CONFIG block and run directly.
+Or use `scripts/push_template.py` — edit the CONFIG block and run directly. The template additionally retries transient failures (429 rate limit, 5xx) with backoff honoring `Retry-After`, reads the token from the `WEBFLOW_API_TOKEN` env var, and can create missing items via POST (`CREATE_MISSING = True`).
 
 ## Step 4: Verify visually
 
@@ -166,6 +166,8 @@ with urllib.request.urlopen(req, context=ctx) as resp:
 ```
 
 Then use the PATCH loop for all subsequent content updates.
+
+`scripts/push_template.py` implements this: set `CREATE_MISSING = True` and rows without a `webflow_id` are POSTed as drafts, with the returned item ID written back to the DB so subsequent runs PATCH them.
 
 ## PATCHing multi-image fields
 

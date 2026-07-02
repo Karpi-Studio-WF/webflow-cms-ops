@@ -25,10 +25,13 @@ Supports two modes:
 Requires:
     pip3 install certifi
 
-Inside the Claude Code on the web sandbox: `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt`
-is needed instead of certifi's bundle. The script honors that env var automatically by
-calling ssl.create_default_context() with no cafile argument.
+SSL certs: certifi's bundle is used when available (principle #1 in SKILL.md —
+macOS Python ships without system certs). If the SSL_CERT_FILE env var is set
+(e.g. `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt` inside the Claude Code
+on the web sandbox), it takes precedence over certifi.
 """
+
+from __future__ import annotations
 
 import json
 import os
@@ -39,20 +42,34 @@ import time
 import urllib.error
 import urllib.request
 
+try:
+    import certifi
+except ImportError:
+    certifi = None
+
 
 # ============================================================================
 # CONFIG: edit these values, then drop in your transformer below
 # ============================================================================
 
-API_TOKEN = "<YOUR_WEBFLOW_API_TOKEN>"     # CMS read/write scope only
+# Prefer the env var so the token never lives in a file that could be committed:
+#     export WEBFLOW_API_TOKEN="..."      (CMS read/write scope only)
+API_TOKEN = os.environ.get("WEBFLOW_API_TOKEN", "<YOUR_WEBFLOW_API_TOKEN>")
 COLLECTION_ID = "<YOUR_COLLECTION_ID>"
 SOURCE_FIELD = "body-2"                     # field the transformer reads (verify by GETting one item)
 DEST_FIELD = SOURCE_FIELD                   # field the result is written to; defaults to SOURCE_FIELD (in-place)
+
+# /tmp is wiped on reboot. For a batch that spans days (or a machine that may
+# restart mid-run), point both paths at a durable location instead.
 SNAPSHOT_DIR = "/tmp/repair_snapshots"      # absolute path; per-item DEST_FIELD values written here (revert source)
 PROGRESS_FILE = "/tmp/repair_progress.txt"  # resume-safe; skip slugs already pushed
 
 # Webflow allows 150 req/min; 0.5s = 120 req/min with burst headroom.
 REQUEST_DELAY_SECONDS = 0.5
+
+# Transient failures (429 rate limit, 5xx) are retried this many times with
+# backoff, honoring the Retry-After header when Webflow sends one.
+MAX_RETRIES = 3
 
 
 # ============================================================================
@@ -111,9 +128,19 @@ MUST_BE_ZERO_AFTER_PUSH = {"legacy_p_code"}
 
 # ============================================================================
 # HARNESS — don't edit unless you know what you're doing
+#
+# Failure philosophy: the batch HALTS on the first push failure. A structural
+# mismatch after a PATCH means the transform (or the field mapping) is suspect
+# for every remaining item, so continuing would multiply the damage.
+# (Contrast push_template.py, which continues past per-item failures — there,
+# items are independent and a single HTTP error says nothing about the rest.)
 # ============================================================================
 
-CTX = ssl.create_default_context()  # honors SSL_CERT_FILE env var; certifi if needed too
+# Principle #1 (SKILL.md): macOS Python ships without system certs, so use
+# certifi's bundle when available. An explicit SSL_CERT_FILE env var wins
+# (needed e.g. inside the Claude Code on the web sandbox).
+_CAFILE = certifi.where() if certifi and not os.environ.get("SSL_CERT_FILE") else None
+CTX = ssl.create_default_context(cafile=_CAFILE)
 HDR = {
     "Authorization": f"Bearer {API_TOKEN}",
     "Content-Type": "application/json",
@@ -122,10 +149,21 @@ HDR = {
 
 
 def http(method: str, url: str, body: dict | None = None) -> dict:
+    """One API call with retry on 429/5xx. Other HTTP errors raise immediately."""
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, headers=HDR, method=method)
-    with urllib.request.urlopen(req, context=CTX, timeout=60) as resp:
-        return json.loads(resp.read().decode())
+    for attempt in range(MAX_RETRIES + 1):
+        req = urllib.request.Request(url, data=data, headers=HDR, method=method)
+        try:
+            with urllib.request.urlopen(req, context=CTX, timeout=60) as resp:
+                return json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            if e.code not in (429, 500, 502, 503, 504) or attempt == MAX_RETRIES:
+                raise
+            retry_after = e.headers.get("Retry-After", "")
+            delay = float(retry_after) if retry_after.isdigit() else 2.0 ** (attempt + 1)
+            print(f"    HTTP {e.code}, retrying in {delay:.0f}s (attempt {attempt + 1}/{MAX_RETRIES})")
+            time.sleep(delay)
+    raise AssertionError("unreachable")
 
 
 def list_all_items(collection_id: str) -> list[dict]:
@@ -224,7 +262,11 @@ def record_progress(slug: str) -> None:
 
 def main() -> int:
     if API_TOKEN.startswith("<") or COLLECTION_ID.startswith("<"):
-        sys.exit("Fill in API_TOKEN, COLLECTION_ID, SOURCE_FIELD, DEST_FIELD in the CONFIG block first.")
+        sys.exit(
+            "Config not filled in. Set the WEBFLOW_API_TOKEN env var (or edit "
+            "API_TOKEN), and fill in COLLECTION_ID, SOURCE_FIELD, DEST_FIELD in "
+            "the CONFIG block first."
+        )
     try:
         transform("")  # smoke check: did the user override transform()?
     except NotImplementedError:

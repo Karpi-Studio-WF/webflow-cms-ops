@@ -93,9 +93,9 @@ Key details:
 ### Step 4: Regenerate HTML for touched items only
 
 ```python
-import sys, re, sqlite3, markdown
+import sys, sqlite3
 sys.path.insert(0, "<path-to>/webflow-cms-ops/scripts")
-from compact import compact
+from compact import to_compact_html  # strips frontmatter, renders, compacts
 
 with open("/tmp/fix_touched.txt") as f:
     touched_slugs = [l.strip() for l in f if l.strip()]
@@ -107,9 +107,7 @@ for slug in touched_slugs:
     row = c.fetchone()
     if not row: continue
     fid, md = row
-    md_clean = re.sub(r"^---[\s\S]*?---", "", md).strip()
-    html = markdown.markdown(md_clean, extensions=["tables", "fenced_code"])
-    c.execute("UPDATE my_items SET body_html = ? WHERE id = ?", (compact(html), fid))
+    c.execute("UPDATE my_items SET body_html = ? WHERE id = ?", (to_compact_html(md), fid))
 conn.commit()
 conn.close()
 print(f"HTML regenerated for {len(touched_slugs)} items")
@@ -144,6 +142,52 @@ Pushed:        <N>/<N> to Webflow (0 failures expected)
 Spot-checks:   <3 slugs>: all rendered correctly
 STATUS:        CLEAN | NEEDS REVIEW
 ```
+
+## Alt text on images inside a RichText body
+
+Alt text lives in two different places on a Webflow item, and they need different treatment:
+
+- **Image FIELDS** (main-image, thumbnail, set-of-images galleries): the alt is metadata on the field value. Use the read-modify-write PATCH in `references/push-pattern.md#patching-multi-image-fields` — this fix-pass pattern does not apply.
+- **`<img>` tags embedded in the body markup**: the alt is just an attribute in the content. That makes it an ordinary fix pass — this section.
+
+The transform depends on how images appear in `body_md`:
+
+```python
+# Markdown image syntax: ![old alt](https://.../hero.png)
+# HTML img tags in the source: <img src="https://.../hero.png" alt="old alt">
+# Either way, key the new alts by src URL (or a stable filename suffix),
+# never by position — reordered images would shift positional alts.
+import re
+
+NEW_ALTS = {  # src substring -> new alt
+    "hero.png": "Dashboard overview with the export button highlighted",
+    "step-2.png": "The collection settings panel, slug field selected",
+}
+
+def fix(md):
+    def md_img(m):
+        alt, src = m.group(1), m.group(2)
+        for key, new_alt in NEW_ALTS.items():
+            if key in src:
+                return f"![{new_alt}]({src})"
+        return m.group(0)
+    md = re.sub(r"!\[([^\]]*)\]\(([^)\s]+)[^)]*\)", md_img, md)
+
+    def html_img(m):
+        tag = m.group(0)
+        src = re.search(r'src="([^"]*)"', tag)
+        if not src:
+            return tag
+        for key, new_alt in NEW_ALTS.items():
+            if key in src.group(1):
+                if 'alt="' in tag:
+                    return re.sub(r'alt="[^"]*"', f'alt="{new_alt}"', tag)
+                return tag[:-1] + f' alt="{new_alt}">'
+        return tag
+    return re.sub(r"<img\b[^>]*>", html_img, md)
+```
+
+The usual transform rules apply unchanged: pure, idempotent (keyed replacement satisfies this — running twice writes the same alt), conservative (images referenced inside fenced code blocks will also match; if your corpus has any, protect fenced regions first). Then continue with steps 3–6 as normal: apply to `body_md`, regenerate HTML for touched slugs, push, spot-check. On the live page, confirm the alt landed by inspecting the rendered `<img>` element — alt text is invisible in a normal visual check.
 
 ## When NOT to use this pattern
 

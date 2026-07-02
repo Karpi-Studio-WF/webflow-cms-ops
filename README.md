@@ -30,6 +30,7 @@ webflow-cms-ops/
 │   └── session-handoff.md           ← split a heavy batch across two chats via filesystem
 ├── scripts/
 │   ├── compact.py                   ← HTML compact helper (required before every push)
+│   ├── code_block_repair.py         ← code-block transforms: promote legacy blocks, add language- classes (library)
 │   ├── push_template.py             ← standalone runnable push script
 │   └── repair_template.py           ← standalone runnable repair script (content-repair-pattern)
 └── examples/
@@ -66,7 +67,8 @@ The scripts work independently of Claude:
 
 ```bash
 pip3 install certifi markdown
-# Copy scripts/push_template.py to your project, edit CONFIG block, run
+# Copy scripts/push_template.py to your project, edit the CONFIG block, run
+export WEBFLOW_API_TOKEN="..."   # or edit API_TOKEN in the CONFIG block
 python3 push_template.py
 ```
 

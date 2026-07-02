@@ -18,6 +18,7 @@ Route based on the request. Read only the reference(s) needed for the specific t
 - **User hits a weird Webflow RichText behavior** (empty sections, stripped content, parser mysteries, list items that vanish) → read `references/webflow-gotchas.md`.
 - **User wants to BULK-GENERATE content from binaries via Claude** (alt text from images, summaries from PDFs, image categorization, screenshot QA — anything where Claude must SEE the file to produce the output) → read `references/vision-pipeline.md`.
 - **User needs to populate or update alt text on a Webflow multi-image field** (set-of-images, gallery, carousel — each image in the array has its own alt) → read `references/vision-pipeline.md` if alts need to be generated from looking at the images, OR `references/push-pattern.md#patching-multi-image-fields` if alts already exist and only need pushing.
+- **User needs to change alt text on `<img>` tags embedded INSIDE a RichText body** (not an image field — images living in the body markup) → this is an ordinary editorial sweep on the body: read `references/fix-pass-pattern.md#alt-text-on-images-inside-a-richtext-body`.
 - **User has a heavy Claude batch that won't fit in one session, OR wants the batch to run async while they do other work** → read `references/session-handoff.md`.
 
 Multiple references may apply to one task. For example, running a fix pass uses both `fix-pass-pattern.md` and `push-pattern.md` (the fix pass ends with a push step).
@@ -62,79 +63,20 @@ Same RichText parser family as principle 2 above. The site's code highlighting s
 
 Otherwise treat it as inline and leave it as `<code>` inside `<p>`.
 
-**Pre-upload check.** Run this transform on every rich text payload as the last step before pushing (after `compact.py`, so the `<pre>` blocks it creates are not re-compacted). It promotes any `<p><code>...</code></p>` whose inner content classifies as block level into a root level `<pre><code>...</code></pre>`, and leaves inline `<code>` alone:
+**Pre-upload check.** The transform lives in `scripts/code_block_repair.py` (a pure library, like `compact.py` — import it, don't reimplement it). Run it on every rich text payload as the last step before pushing (after `compact.py`, so the `<pre>` blocks it creates are not re-compacted). It promotes any `<p><code>...</code></p>` whose inner content classifies as block level into a root level `<pre><code class="language-X">...</code></pre>`, adds/fixes `language-` classes on existing `<pre><code>`, and leaves inline `<code>` alone:
 
 ```python
-import json, re
-from html import unescape
+import sys
+sys.path.insert(0, "<path-to>/webflow-cms-ops/scripts")
+from compact import compact
+from code_block_repair import repair_code_blocks
 
-BLOCK_START = re.compile(r'\s*<(script|style|!--|html|!DOCTYPE)', re.IGNORECASE)
-TAG = re.compile(r'<[a-zA-Z/!]')
-
-def is_block_code(text):
-    """True if this code content should render as a block (<pre><code>)."""
-    t = unescape(text)
-    if "\n" in t:
-        return True
-    if BLOCK_START.match(t):
-        return True
-    if len(t) > 120:
-        return True
-    if len(TAG.findall(t)) > 1:
-        return True
-    s = t.strip()
-    if s[:1] in "{[":
-        try:
-            json.loads(s)
-            return True
-        except ValueError:
-            pass
-    return False
-
-def promote_code_blocks(html):
-    """Rewrite <p><code>...</code></p> to <pre><code>...</code></pre> when the
-    inner content is block level. Inline <code> inside prose is left alone.
-    Idempotent: existing <pre><code> is not matched."""
-    def repl(m):
-        inner = m.group(1)
-        if is_block_code(inner):
-            return "<pre><code>" + inner + "</code></pre>"
-        return m.group(0)
-    return re.sub(r'<p><code>(.*?)</code></p>', repl, html, flags=re.DOTALL)
+html = repair_code_blocks(compact(html))  # final transform, right before the PATCH
 ```
 
-Wire it into the push as the final transform: `html = promote_code_blocks(compact(html))` right before the PATCH.
+**Audit existing content.** To find items already pushed with block code trapped in `<p><code>` (or bare `<pre><code>` missing a language class), page through the collection and run `code_block_markers()` from the same module on each stored body — any item with a non-zero `legacy` or `bare_pre` count needs repair. The Data API GET returns the HTML as pushed (see principle 6 and `references/webflow-gotchas.md`), so the stored shape is exactly what you inspect. `scripts/repair_template.py` wires this audit + repair into a full harness: drop `repair_code_blocks` in as its `transform()`.
 
-**Audit existing content.** To find items already pushed with block code trapped in `<p><code>`, page through the collection and flag any `<p><code>...</code></p>` whose inner content trips the block test. The Data API GET returns the HTML as pushed (see principle 6 and `references/webflow-gotchas.md`), so the stored shape is exactly what you inspect here:
-
-```python
-import urllib.request, ssl, certifi, json, re
-
-ctx = ssl.create_default_context(cafile=certifi.where())
-PCODE = re.compile(r'<p><code>(.*?)</code></p>', re.DOTALL)
-
-offenders, offset = [], 0
-while True:
-    req = urllib.request.Request(
-        f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items?limit=100&offset={offset}",
-        headers={"Authorization": f"Bearer {API_TOKEN}", "Accept": "application/json"},
-    )
-    with urllib.request.urlopen(req, context=ctx) as resp:
-        items = json.loads(resp.read()).get("items", [])
-    if not items:
-        break
-    for it in items:
-        body = it["fieldData"].get(BODY_FIELD, "") or ""
-        if any(is_block_code(inner) for inner in PCODE.findall(body)):
-            offenders.append(it["fieldData"].get("slug", it["id"]))
-    offset += 100
-
-print(f"{len(offenders)} items need code-block repair:")
-for s in offenders:
-    print(f"  {s}")
-```
-
-Repair each offender by running its body through `promote_code_blocks` and pushing the result with the normal loop (see `references/push-pattern.md`). Then verify visually: open three repaired items and confirm the code blocks render with highlighting. Per principle 6, the API GET alone is not proof.
+After repairing, verify visually: open three repaired items and confirm the code blocks render with highlighting. Per principle 6, the API GET alone is not proof.
 
 **Round-trip-safe shape (when a syntax highlighter is wired up).** Sites with highlight.js (or a similar highlighter in custom code) target `<pre><code class="language-X">` precisely, and the Webflow Designer silently reverts non-conforming `<pre><code>` variants back to the legacy `<p><code>` shape the next time the article is opened. Push code blocks in this exact shape to survive both:
 
@@ -148,7 +90,7 @@ Repair each offender by running its body through `promote_code_blocks` and pushi
 - One trailing `\n` before the closing `</code>`.
 - The wrapping `<p>` is dropped; `<pre>` sits directly in the rich text body.
 
-Verified on a live glossary item: this exact shape survives a Designer open + publish round-trip; variants do not. When running `promote_code_blocks` above on a site with a highlighter, augment its output line to include the detected language class and a trailing `\n` before `</code>`.
+Verified on a live glossary item: this exact shape survives a Designer open + publish round-trip; variants do not. `repair_code_blocks` in `scripts/code_block_repair.py` emits exactly this shape (language class, real newlines, trailing `\n` before `</code>`).
 
 ### 3. Absolute DB paths
 
@@ -166,6 +108,8 @@ Webflow allows 150 req/min. `time.sleep(0.5)` between requests = 120 req/min wit
 ### 5. Resume-safe progress file
 
 Track pushed slugs in `/tmp/<task>_progress.txt`. If the script dies at item 87, restart picks up at 88. Never retry the whole batch.
+
+Caveat: `/tmp` is wiped on reboot. For a batch that spans days — or a machine that may restart mid-run — put the progress file somewhere durable instead (e.g. next to the DB). Same for repair snapshots.
 
 ```python
 done = set()

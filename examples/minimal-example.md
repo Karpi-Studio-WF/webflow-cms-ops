@@ -59,13 +59,13 @@ print("DB seeded.")
 
 ## 2. Create CMS items in Webflow (first time only)
 
-Webflow requires an existing item ID before you can PATCH. For first-time upload, POST to create and capture the returned IDs:
+Webflow requires an existing item ID before you can PATCH. For first-time upload, POST to create and capture the returned IDs. (Alternatively, skip this step entirely: `scripts/push_template.py` with `CREATE_MISSING = True` creates missing items during the push in step 4.)
 
 ```python
 # create_items.py
-import sqlite3, json, time, urllib.request, ssl, certifi
+import os, sqlite3, json, time, urllib.request, ssl, certifi
 
-API_TOKEN = "YOUR_TOKEN"
+API_TOKEN = os.environ["WEBFLOW_API_TOKEN"]  # export it; don't paste tokens into files
 COLLECTION_ID = "YOUR_COLLECTION_ID"
 ctx = ssl.create_default_context(cafile=certifi.where())
 
@@ -124,7 +124,6 @@ print("HTML regenerated.")
 Copy `scripts/push_template.py` next to `content.db`, edit the CONFIG block:
 
 ```python
-API_TOKEN = "YOUR_TOKEN"
 COLLECTION_ID = "YOUR_COLLECTION_ID"
 BODY_FIELD = "body"  # verify: GET one item, check fieldData keys
 DB_PATH = "/absolute/path/to/content.db"
@@ -134,6 +133,7 @@ PROGRESS_FILE = "/tmp/example_push_progress.txt"
 Run:
 
 ```bash
+export WEBFLOW_API_TOKEN="..."  # the template reads this env var
 python3 push_template.py
 ```
 

@@ -1,0 +1,27 @@
+name: smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 3.9 is the documented minimum (README), 3.12 a current release.
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install script dependencies
+        run: pip install certifi markdown
+      - name: compact.py self-test
+        run: python scripts/compact.py
+      - name: code_block_repair.py self-test
+        run: python scripts/code_block_repair.py
+      - name: All scripts import cleanly
+        run: python -c "import sys; sys.path.insert(0, 'scripts'); import compact, code_block_repair, push_template, repair_template"

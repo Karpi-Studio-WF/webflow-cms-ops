@@ -4,9 +4,9 @@ code_block_repair.py — multi-language code-block normalization for Webflow Ric
 Pure, importable transforms (no I/O, no API calls, no collection IDs, no article
 content). Use it as a library, like `compact.py` — not as a standalone command.
 
-This is the multi-language generalization of the `promote_code_blocks()` helper
-sketched in `SKILL.md`: it not only promotes legacy `<p><code>` blocks to
-root-level `<pre><code>`, it also assigns a `language-` class by inspecting the
+This is the pre-upload transform referenced by `SKILL.md` ("Code block
+formatting in rich text"): it promotes legacy `<p><code>` blocks to
+root-level `<pre><code>`, assigns a `language-` class by inspecting the
 code content, and relabels a confidently-wrong class. The `language-X` class is
 what a highlighter (e.g. highlight.js) hooks, so a missing or wrong class means
 no highlighting.
