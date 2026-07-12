@@ -46,12 +46,21 @@ except ImportError:
 
 
 # ============================================================================
-# CONFIG — edit these, then run
+# CONFIG
 # ============================================================================
+# Credentials come from a .env file or environment variables via wf_config
+# (run scripts/setup_env.py to create the .env). The values below are used only
+# as a fallback if the corresponding env key is unset — so you can still edit
+# them directly if you prefer.
 
-API_TOKEN = "<YOUR_WEBFLOW_API_TOKEN>"        # Site Settings → Apps & Integrations → API Access
-COLLECTION_ID = "67756fb6c22d9437aa3af048"    # Karpi blog collection
-BODY_FIELD = "article-text"                    # the RichText field slug on this collection
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from wf_config import load_config  # noqa: E402
+
+_cfg = load_config(require=())  # don't fail here; we validate what we need below
+
+API_TOKEN = _cfg.get("WEBFLOW_API_TOKEN", "<YOUR_WEBFLOW_API_TOKEN>")
+COLLECTION_ID = _cfg.get("WEBFLOW_COLLECTION_ID", "67756fb6c22d9437aa3af048")  # Karpi blog collection
+BODY_FIELD = _cfg.get("WEBFLOW_BODY_FIELD", "article-text")                     # RichText field slug
 TABLE_CLASS = "ks-pricing-table"               # class added to each <table>; matches the live site CSS
 
 # The items to fix. Pre-filled with the 3 items that have bare tables (4 tables total).

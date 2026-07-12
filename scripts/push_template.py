@@ -40,13 +40,21 @@ except ImportError:
 
 
 # ============================================================================
-# CONFIG — edit these five values, then run the script
+# CONFIG
 # ============================================================================
+# Credentials load from a .env file or environment variables via wf_config
+# (run scripts/setup_env.py to create the .env). The literals below are used
+# only when the matching env key is unset, so you can still edit them directly.
 
-API_TOKEN = "<YOUR_WEBFLOW_API_TOKEN>"
-COLLECTION_ID = "<YOUR_COLLECTION_ID>"
-BODY_FIELD = "body"  # or "body-2" — verify by fetching one item first
-DB_PATH = "/absolute/path/to/your.db"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from wf_config import load_config  # noqa: E402
+
+_cfg = load_config(require=())  # validated in main() so --help etc. never crash
+
+API_TOKEN = _cfg.get("WEBFLOW_API_TOKEN", "<YOUR_WEBFLOW_API_TOKEN>")
+COLLECTION_ID = _cfg.get("WEBFLOW_COLLECTION_ID", "<YOUR_COLLECTION_ID>")
+BODY_FIELD = _cfg.get("WEBFLOW_BODY_FIELD", "body")  # or "body-2" — verify by fetching one item first
+DB_PATH = _cfg.get("WEBFLOW_DB_PATH", "/absolute/path/to/your.db")
 PROGRESS_FILE = "/tmp/webflow_push_progress.txt"
 
 # Optional: restrict push to specific slugs (leave None to push everything)
