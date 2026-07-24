@@ -17,7 +17,7 @@ Route based on the request. Read only the reference(s) needed for the specific t
 - **User wants to inject a SECONDARY JSON-LD block alongside the page's primary schema** (FAQPage on Q&A articles, HowTo on step-by-step guides, Product, Review, BreadcrumbList; via a dedicated CMS field and a one-time template embed) → read `references/faqpage-schema.md`.
 - **User hits a weird Webflow RichText behavior** (empty sections, stripped content, parser mysteries, list items that vanish) → read `references/webflow-gotchas.md`.
 - **User wants to BULK-GENERATE content from binaries via Claude** (alt text from images, summaries from PDFs, image categorization, screenshot QA — anything where Claude must SEE the file to produce the output) → read `references/vision-pipeline.md`.
-- **User needs to populate or update alt text on a Webflow multi-image field** (set-of-images, gallery, carousel — each image in the array has its own alt) → read `references/vision-pipeline.md` if alts need to be generated from looking at the images, OR `references/push-pattern.md#patching-multi-image-fields` if alts already exist and only need pushing.
+- **User needs to populate or update alt text on a Webflow multi-image field** (set-of-images, gallery, carousel — each image in the array has its own alt) → read `references/multi-image-alt-text.md` for the complete, project-agnostic end-to-end pipeline (discover → pull → caption → review → push → publish) with a copy-paste local runbook. It builds on `references/vision-pipeline.md` (generating alts by looking at images) and `references/push-pattern.md#patching-multi-image-fields` (the field PATCH schema when alts already exist).
 - **User has a heavy Claude batch that won't fit in one session, OR wants the batch to run async while they do other work** → read `references/session-handoff.md`.
 
 Multiple references may apply to one task. For example, running a fix pass uses both `fix-pass-pattern.md` and `push-pattern.md` (the fix pass ends with a push step).
@@ -214,6 +214,7 @@ references/
   webflow-gotchas.md                  ← the gotchas with symptoms and fixes
   webflow-richtext-tables.md          ← HTML <table> in RichText (markdown tables don't work)
   vision-pipeline.md                  ← bulk content generation from binaries (alt text, summaries, categorization)
+  multi-image-alt-text.md             ← end-to-end alt-text pipeline for multi-image/gallery fields + copy-paste local runbook
   session-handoff.md                  ← split a heavy batch across two chats via filesystem
 scripts/
   compact.py                          ← HTML compact helper (required before every push)
