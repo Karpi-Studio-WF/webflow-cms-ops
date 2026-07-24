@@ -38,6 +38,7 @@ references/
   content-repair-pattern.md  # Shape repair on stored CMS field values (legacy markup migration)
   faqpage-schema.md          # FAQPage and other secondary JSON-LD via a dedicated CMS field
   vision-pipeline.md         # Vision batch generation (alt text, summaries)
+  multi-image-alt-text.md    # End-to-end alt-text pipeline for multi-image fields + copy-paste local runbook
   webflow-gotchas.md         # known failure modes with fixes
   webflow-richtext-tables.md # HTML <table> in RichText (markdown tables don't work)
   session-handoff.md         # Multi-chat batching for large jobs
@@ -80,6 +81,9 @@ Choose pattern by batch size:
 - **< 100 items:** Inline, one per turn.
 - **100–800 items:** Parallel subagents, each processing a chunk in isolated context.
 - **> 800 items:** Handoff to new chat via `.handoff/task.md` and `.handoff/progress.md`.
+
+### Multi-Image Alt Text (multi-image-alt-text.md)
+End-to-end, project-agnostic pipeline for alt text on a multi-image/gallery (or single Image) field: discover IDs → pull field to SQLite → caption each image with vision → review gate → push (spread `**img`, override only `alt`, preserve `fileId`/`url`/order) → publish. Ships a copy-paste local runbook. Run locally when a sandbox blocks Webflow's asset CDN; use site-level publish when a duplicated site rejects item-publish with `Invalid locale`.
 
 ### Session Handoff (session-handoff.md)
 Split heavy batches across two chat sessions when the 32MB request cap is near. Worker reads `.handoff/task.md`, writes progress to `.handoff/progress.md`, outputs to `.handoff/results.json`.

@@ -8,7 +8,7 @@ A single Claude skill that covers five related content operations on Webflow CMS
 
 - **Bulk push** — send new or updated content from a local source (SQLite, markdown, CSV) to a Webflow CMS collection at scale, beyond what the MCP or Designer handle well.
 - **Editorial fix pass** — run a targeted rewrite across existing items (strip a phrase, remove meta-content leaks, swap a heading, rewrite formulaic openers) as a repeatable, resume-safe, rollback-friendly sweep.
-- **Vision pipeline** — bulk-generate content from binary assets (alt text from images, summaries from PDFs, image categorization) and push back as field updates, including the multi-image field array schema.
+- **Vision pipeline** — bulk-generate content from binary assets (alt text from images, summaries from PDFs, image categorization) and push back as field updates, including the multi-image field array schema. For the common alt-text-on-a-gallery-field job specifically, `references/multi-image-alt-text.md` is a complete, project-agnostic runbook (discover → pull → caption → review → push → publish) you can copy-paste and run locally.
 - **Content shape repair**: reshape legacy markup on stored CMS field values to a new target shape across many items (legacy code blocks to round-trip-safe `<pre><code>`, brand suffix stripped from `meta-title`, deprecated schema property renames, broken tables restored, etc.). Workflow: audit, snapshot, transform with an idempotent pure function, diff, stage push, human publishes from the Designer.
 - **Secondary JSON-LD via CMS field**: inject per-article secondary schema (FAQPage, HowTo, Product, Review, BreadcrumbList) alongside the page's primary schema. One-time setup creates a dedicated CMS field and a template embed; per-article workflow extracts the content (Q&As, steps, etc.) from the body and writes the JSON-LD object into the field. Same harness as content-repair, in cross-field mode (read body, write to dedicated field).
 
@@ -27,6 +27,7 @@ webflow-cms-ops/
 │   ├── webflow-gotchas.md           ← gotchas with symptoms and fixes
 │   ├── webflow-richtext-tables.md   ← HTML <table> in RichText (markdown tables don't work)
 │   ├── vision-pipeline.md           ← bulk content generation from binaries (alt text, summaries)
+│   ├── multi-image-alt-text.md      ← end-to-end alt-text pipeline for multi-image/gallery fields + local runbook
 │   └── session-handoff.md           ← split a heavy batch across two chats via filesystem
 ├── scripts/
 │   ├── compact.py                   ← HTML compact helper (required before every push)
