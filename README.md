@@ -40,7 +40,9 @@ webflow-cms-ops/
 │   ├── repair_template.py           ← standalone runnable repair script (content-repair-pattern)
 │   ├── snapshot_collections.py      ← read-only CMS snapshot into SQLite (items, text, links, references)
 │   ├── audit_glossary.py            ← offline glossary audit on a snapshot
-│   └── glossary_schema.py           ← DefinedTerm/FAQPage JSON-LD per entry, DefinedTermSet for the index
+│   ├── glossary_schema.py           ← DefinedTerm/FAQPage JSON-LD per entry, DefinedTermSet for the index
+│   └── build_skill.py               ← package the skill + private projects/ into one .skill
+├── projects/                        ← per-site positions files (private, gitignored; shipped in the built bundle)
 └── examples/
     └── minimal-example.md           ← end-to-end walkthrough for 10 markdown files
 ```
@@ -56,8 +58,9 @@ Scripts are executed via Bash, not read into context. They're reference-quality 
 ### As a Claude skill (Claude.ai / Claude Code)
 
 1. Download or clone this repo.
-2. Zip the `webflow-cms-ops/` folder (not its contents — zip the folder itself).
-3. Upload the zip via Claude's skill upload UI.
+2. Optional: add private per-site folders under `projects/<project>/positions.md` (see `projects/README.md`). They are gitignored and never committed.
+3. Build the bundle: `python3 scripts/build_skill.py` → `dist/webflow-cms-ops.skill` (the generic skill plus your project folders, in one `webflow-cms-ops/` folder).
+4. Upload it via Claude's skill upload UI.
 
 ### As a Claude Code project-level skill
 

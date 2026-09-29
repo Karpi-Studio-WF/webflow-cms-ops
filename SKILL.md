@@ -1,11 +1,15 @@
 ---
 name: webflow-cms-ops
-description: Production-tested skill for bulk-publishing, editorial fix passes, content shape repair, and glossary builds and audits (AEO) on Webflow CMS. Handles the known gotchas — macOS SSL certs (certifi), the RichText whitespace-between-tags parser bug, resume-safe progress tracking, and 0.5s rate limiting. Use when pushing 20+ items, running editorial sweeps across a collection, or running any headless Webflow CMS op where the MCP or Designer are impractical. Also use when planning, writing, pushing or auditing a glossary on Webflow (one owner per concept, entry anatomy, internal linking, DefinedTerm/FAQPage schema). Triggers bulk publish Webflow, push markdown to Webflow CMS, sync content to Webflow, bulk edit CMS items, strip phrase across collection, editorial fix pass, CMS content sweep, programmatic Webflow content ops, glossary, glossary audit, glossary sweep, dedup the glossary, cross-link glossary, who owns this term, DefinedTerm schema.
+description: Production-tested skill for bulk-publishing, editorial fix passes, content shape repair, and glossary builds and audits (AEO) on Webflow CMS. Handles the known gotchas — macOS SSL certs (certifi), the RichText whitespace-between-tags parser bug, resume-safe progress tracking, and 0.5s rate limiting. Use when pushing 20+ items, running editorial sweeps across a collection, or running any headless Webflow CMS op where the MCP or Designer are impractical. Also use when planning, writing, pushing or auditing a glossary on Webflow (one owner per concept, entry anatomy, internal linking, DefinedTerm/FAQPage schema). Per-site settings live in projects/. Triggers bulk publish Webflow, push markdown to Webflow CMS, sync content to Webflow, bulk edit CMS items, strip phrase across collection, editorial fix pass, CMS content sweep, programmatic Webflow content ops, glossary, glossary audit, glossary sweep, dedup the glossary, cross-link glossary, who owns this term, DefinedTerm schema.
 ---
 
 # Webflow CMS Ops
 
 Bulk push and editorial fix patterns for Webflow CMS at scale. Built from production use pushing 281 articles with 796 API writes and zero failures.
+
+## Project context (read first)
+
+Every reference in this skill is generic. Site-specific facts live side by side in `projects/<project>/positions.md` (domain, collection IDs, field slugs, title suffix, tools and methods the site uses, glossary ownership map, voice rules, write log). When the task names a site or client, list `projects/`, open the matching folder, and read its `positions.md` before any other reference; its values override generic defaults such as `body` vs `body-2`. If no folder matches, ask which site it is, or start one from `references/glossary-positions-template.md`. Never store API tokens in `projects/`.
 
 ## Which pattern does the user need?
 
@@ -229,6 +233,9 @@ scripts/
   snapshot_collections.py             ← read-only pull of CMS collections (items, text, links, references) into SQLite
   audit_glossary.py                   ← offline glossary audit on a snapshot: links, duplicates, AEO shape, schema
   glossary_schema.py                  ← DefinedTerm/FAQPage JSON-LD per entry, DefinedTermSet for the index (library + CLI)
+  build_skill.py                      ← package skill + private projects/ into one installable .skill
+projects/
+  <project>/positions.md              ← per-site facts and decisions (private; gitignored, shipped in the built bundle)
 examples/
   minimal-example.md                  ← end-to-end walkthrough for 10 markdown files
 ```

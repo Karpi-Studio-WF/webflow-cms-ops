@@ -53,11 +53,15 @@ scripts/
   snapshot_collections.py    # Read-only snapshot of CMS collections into SQLite (CLI)
   audit_glossary.py          # Offline glossary audit on a snapshot DB (CLI)
   glossary_schema.py         # DefinedTerm/FAQPage JSON-LD (library, repair transform, DefinedTermSet CLI)
+  build_skill.py             # Zip tracked files + private projects/ into dist/webflow-cms-ops.skill
+projects/                    # Per-site positions.md folders; gitignored except README.md, never commit them
 examples/
   minimal-example.md         # End-to-end walkthrough for 10 markdown files
 ```
 
-**How the skill routes:** When invoked, Claude reads `SKILL.md` to identify which pattern matches the task, then reads only the relevant reference document(s).
+**How the skill routes:** When invoked, Claude reads `SKILL.md` to identify which pattern matches the task, then reads only the relevant reference document(s). Site-specific facts come from `projects/<project>/positions.md`, which overrides generic defaults.
+
+**Public repo, private projects:** this repo is public. Client or Karpi-specific content (collection IDs, house positions, voice rules) goes only in `projects/`, which is gitignored and packaged by `scripts/build_skill.py`.
 
 **Scripts are executed, not read into context.** `compact.py` and `push_template.py` are production utilities — edit the CONFIG block in `push_template.py` and run directly. Do not summarize or inline them.
 

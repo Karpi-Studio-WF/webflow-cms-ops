@@ -16,3 +16,10 @@ venv/
 # artifacts. Templates default to /tmp (already ignored above); this also keeps
 # fill-in runs that write into the repo from committing live article HTML.
 snapshots/
+
+# Per-site project folders (positions, collection IDs, voice rules) are private.
+# They sit side by side with the generic skill locally and ship inside the
+# installable bundle built by scripts/build_skill.py, but are never committed.
+projects/*
+!projects/README.md
+dist/
