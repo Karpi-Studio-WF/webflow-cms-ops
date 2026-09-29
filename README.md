@@ -4,13 +4,14 @@ A Claude skill for bulk-publishing and editorial fix passes on Webflow CMS. Buil
 
 ## What this is
 
-A single Claude skill that covers five related content operations on Webflow CMS:
+A single Claude skill that covers six related content operations on Webflow CMS:
 
 - **Bulk push** — send new or updated content from a local source (SQLite, markdown, CSV) to a Webflow CMS collection at scale, beyond what the MCP or Designer handle well.
 - **Editorial fix pass** — run a targeted rewrite across existing items (strip a phrase, remove meta-content leaks, swap a heading, rewrite formulaic openers) as a repeatable, resume-safe, rollback-friendly sweep.
 - **Vision pipeline** — bulk-generate content from binary assets (alt text from images, summaries from PDFs, image categorization) and push back as field updates, including the multi-image field array schema. For the common alt-text-on-a-gallery-field job specifically, `references/multi-image-alt-text.md` is a complete, project-agnostic runbook (discover → pull → caption → review → push → publish) you can copy-paste and run locally.
 - **Content shape repair**: reshape legacy markup on stored CMS field values to a new target shape across many items (legacy code blocks to round-trip-safe `<pre><code>`, brand suffix stripped from `meta-title`, deprecated schema property renames, broken tables restored, etc.). Workflow: audit, snapshot, transform with an idempotent pure function, diff, stage push, human publishes from the Designer.
 - **Secondary JSON-LD via CMS field**: inject per-article secondary schema (FAQPage, HowTo, Product, Review, BreadcrumbList) alongside the page's primary schema. One-time setup creates a dedicated CMS field and a template embed; per-article workflow extracts the content (Q&As, steps, etc.) from the body and writes the JSON-LD object into the field. Same harness as content-repair, in cross-field mode (read body, write to dedicated field).
+- **Glossaries for AEO**: build a glossary as a linked network, not a pile of articles. One owner per concept, a fixed entry anatomy (bare-term name, question H1, 40 to 60 word answer block, differs line), in-text linking rules, and `DefinedTerm` + `FAQPage` schema derived from the visible content. Ships a read-only snapshot tool, an offline audit (duplicate passages, unlinked sibling terms, orphan entries, broken links, AEO shape checks), and a per-project positions template so the method replicates across clients.
 
 The skill handles the known gotchas that waste a first-time user's first production session: macOS SSL cert issues, the Webflow RichText whitespace-between-tags parser bug, slug soft-delete traps, background agent deadlocks, the 32MB request cap on cumulative image Reads, and more. Each is documented with symptoms and fixes in `references/webflow-gotchas.md`.
 
@@ -24,6 +25,9 @@ webflow-cms-ops/
 │   ├── fix-pass-pattern.md          ← six-step editorial fix pattern
 │   ├── content-repair-pattern.md    ← shape repair on stored CMS field values (legacy markup migration)
 │   ├── faqpage-schema.md            ← FAQPage and other secondary JSON-LD via a dedicated CMS field
+│   ├── glossary-pattern.md          ← glossary as a linked network: ownership, entries, linking, schema (AEO)
+│   ├── glossary-sweep.md            ← audit and clean up an existing glossary
+│   ├── glossary-positions-template.md ← per-project decisions file (copy into the project)
 │   ├── webflow-gotchas.md           ← gotchas with symptoms and fixes
 │   ├── webflow-richtext-tables.md   ← HTML <table> in RichText (markdown tables don't work)
 │   ├── vision-pipeline.md           ← bulk content generation from binaries (alt text, summaries)
@@ -31,8 +35,12 @@ webflow-cms-ops/
 │   └── session-handoff.md           ← split a heavy batch across two chats via filesystem
 ├── scripts/
 │   ├── compact.py                   ← HTML compact helper (required before every push)
+│   ├── code_block_repair.py         ← code-block transforms (library)
 │   ├── push_template.py             ← standalone runnable push script
-│   └── repair_template.py           ← standalone runnable repair script (content-repair-pattern)
+│   ├── repair_template.py           ← standalone runnable repair script (content-repair-pattern)
+│   ├── snapshot_collections.py      ← read-only CMS snapshot into SQLite (items, text, links, references)
+│   ├── audit_glossary.py            ← offline glossary audit on a snapshot
+│   └── glossary_schema.py           ← DefinedTerm/FAQPage JSON-LD per entry, DefinedTermSet for the index
 └── examples/
     └── minimal-example.md           ← end-to-end walkthrough for 10 markdown files
 ```

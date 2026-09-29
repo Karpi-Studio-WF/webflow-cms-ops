@@ -25,11 +25,12 @@ Supports two modes:
 Requires:
     pip3 install certifi
 
-Inside the Claude Code on the web sandbox: `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt`
-is needed instead of certifi's bundle. The script honors that env var automatically by
-calling ssl.create_default_context() with no cafile argument.
+SSL: if SSL_CERT_FILE is set (e.g. a proxied sandbox) that bundle is used; otherwise
+certifi's bundle (required on macOS); otherwise the system default.
 """
+from __future__ import annotations
 
+import inspect
 import json
 import os
 import re
@@ -38,6 +39,11 @@ import sys
 import time
 import urllib.error
 import urllib.request
+
+try:
+    import certifi
+except ImportError:
+    certifi = None
 
 
 # ============================================================================
@@ -62,6 +68,10 @@ REQUEST_DELAY_SECONDS = 0.5
 def transform(source_value: str) -> str:
     """Pure: SOURCE_FIELD value -> DEST_FIELD value. Idempotent.
 
+    Optional second parameter: declare `def transform(source_value, item=None)` and the
+    harness passes the whole CMS item too (read-only), for transforms that need other
+    fields such as name or slug (e.g. glossary_schema.make_transform).
+
     Replace this body with your transformation logic. Rules:
       - Pure: no I/O.
       - Idempotent: running twice equals running once.
@@ -75,7 +85,8 @@ def transform(source_value: str) -> str:
 
     Worked examples in references/content-repair-pattern.md and
     references/faqpage-schema.md. A ready-made multi-language code-block
-    transform (drop-in for the in-place case) lives in scripts/code_block_repair.py."""
+    transform (drop-in for the in-place case) lives in scripts/code_block_repair.py;
+    a glossary DefinedTerm/FAQPage transform (cross-field) in scripts/glossary_schema.py."""
     raise NotImplementedError("Replace transform() with your transformation logic.")
 
 
@@ -113,7 +124,8 @@ MUST_BE_ZERO_AFTER_PUSH = {"legacy_p_code"}
 # HARNESS — don't edit unless you know what you're doing
 # ============================================================================
 
-CTX = ssl.create_default_context()  # honors SSL_CERT_FILE env var; certifi if needed too
+CTX = ssl.create_default_context(
+    cafile=os.environ.get("SSL_CERT_FILE") or (certifi.where() if certifi else None))
 HDR = {
     "Authorization": f"Bearer {API_TOKEN}",
     "Content-Type": "application/json",
@@ -162,14 +174,27 @@ def _read_dest(item: dict) -> str:
     return item["fieldData"].get(DEST_FIELD, "") or ""
 
 
+def _transform_takes_item() -> bool:
+    try:
+        return len(inspect.signature(transform).parameters) >= 2
+    except (TypeError, ValueError):
+        return False
+
+
+def _apply(item: dict) -> str:
+    """transform() on this item's SOURCE_FIELD value (plus the item, if transform accepts it)."""
+    if _transform_takes_item():
+        return transform(_read_source(item), item)
+    return transform(_read_source(item))
+
+
 def audit(items: list[dict]) -> list[dict]:
     """An item is affected if transform(source) differs from current dest AND is non-empty."""
     affected = []
     for it in items:
-        src = _read_source(it)
         dst = _read_dest(it)
         try:
-            new = transform(src)
+            new = _apply(it)
         except Exception as e:
             sys.exit(f"transform() raised on item {it['fieldData'].get('slug', it['id'])}: {e}")
         if new and new != dst:
@@ -265,7 +290,7 @@ def main() -> int:
     first = todo[0]
     slug = first["fieldData"]["slug"]
     before = _read_dest(first)
-    after = transform(_read_source(first))
+    after = _apply(first)
     diff_summary(slug, before, after)
 
     with open(f"{SNAPSHOT_DIR}/{slug}_NEW.html", "w") as f:
@@ -282,7 +307,7 @@ def main() -> int:
     for it in todo:
         slug = it["fieldData"]["slug"]
         item_id = it["id"]
-        new = transform(_read_source(it))
+        new = _apply(it)
         if not new or new == _read_dest(it):
             continue  # idempotency: skip no-ops
         payload = {

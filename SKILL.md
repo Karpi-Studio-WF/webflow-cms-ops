@@ -1,6 +1,6 @@
 ---
 name: webflow-cms-ops
-description: Production-tested skill for bulk-publishing, editorial fix passes, and content shape repair on Webflow CMS. Handles the known gotchas — macOS SSL certs (certifi), the RichText whitespace-between-tags parser bug, resume-safe progress tracking, and 0.5s rate limiting. Use when pushing 20+ items, running editorial sweeps across a collection, or running any headless Webflow CMS op where the MCP or Designer are impractical. Triggers bulk publish Webflow, push markdown to Webflow CMS, sync content to Webflow, bulk edit CMS items, strip phrase across collection, editorial fix pass, CMS content sweep, programmatic Webflow content ops.
+description: Production-tested skill for bulk-publishing, editorial fix passes, content shape repair, and glossary builds and audits (AEO) on Webflow CMS. Handles the known gotchas — macOS SSL certs (certifi), the RichText whitespace-between-tags parser bug, resume-safe progress tracking, and 0.5s rate limiting. Use when pushing 20+ items, running editorial sweeps across a collection, or running any headless Webflow CMS op where the MCP or Designer are impractical. Also use when planning, writing, pushing or auditing a glossary on Webflow (one owner per concept, entry anatomy, internal linking, DefinedTerm/FAQPage schema). Triggers bulk publish Webflow, push markdown to Webflow CMS, sync content to Webflow, bulk edit CMS items, strip phrase across collection, editorial fix pass, CMS content sweep, programmatic Webflow content ops, glossary, glossary audit, glossary sweep, dedup the glossary, cross-link glossary, who owns this term, DefinedTerm schema.
 ---
 
 # Webflow CMS Ops
@@ -15,6 +15,8 @@ Route based on the request. Read only the reference(s) needed for the specific t
 - **User wants to run an editorial FIX across existing content** (strip a phrase, remove meta leaks, swap headings, bulk regex rewrite) → read `references/fix-pass-pattern.md`.
 - **User wants to REPAIR a legacy content shape across existing items** (convert old code blocks to a new shape, strip a brand suffix from `meta-title`, rename deprecated schema properties, restore tables stripped by Webflow ingest, rewrite an old domain in `href` values, any "convert shape A to shape B" job on stored CMS field values) → read `references/content-repair-pattern.md`.
 - **User wants to inject a SECONDARY JSON-LD block alongside the page's primary schema** (FAQPage on Q&A articles, HowTo on step-by-step guides, Product, Review, BreadcrumbList; via a dedicated CMS field and a one-time template embed) → read `references/faqpage-schema.md`.
+- **User wants to PLAN, WRITE, EXTEND, or PUSH a glossary** (a collection of term definitions, own site or a client's AEO work: ownership map, entry types, linking, DefinedTerm/FAQPage schema, adding terms from a keyword list) → read `references/glossary-pattern.md`, plus the project's positions file (template: `references/glossary-positions-template.md`).
+- **User wants to AUDIT or CLEAN UP an existing glossary** (duplicate explanations across entries, unlinked sibling terms, orphan entries, broken links, contradictions with live articles) → read `references/glossary-sweep.md`.
 - **User hits a weird Webflow RichText behavior** (empty sections, stripped content, parser mysteries, list items that vanish) → read `references/webflow-gotchas.md`.
 - **User wants to BULK-GENERATE content from binaries via Claude** (alt text from images, summaries from PDFs, image categorization, screenshot QA — anything where Claude must SEE the file to produce the output) → read `references/vision-pipeline.md`.
 - **User needs to populate or update alt text on a Webflow multi-image field** (set-of-images, gallery, carousel — each image in the array has its own alt) → read `references/multi-image-alt-text.md` for the complete, project-agnostic end-to-end pipeline (discover → pull → caption → review → push → publish) with a copy-paste local runbook. It builds on `references/vision-pipeline.md` (generating alts by looking at images) and `references/push-pattern.md#patching-multi-image-fields` (the field PATCH schema when alts already exist).
@@ -211,6 +213,9 @@ references/
   fix-pass-pattern.md                 ← six-step editorial fix pattern
   content-repair-pattern.md           ← shape repair on stored CMS field values (legacy markup migration)
   faqpage-schema.md                   ← FAQPage and other secondary JSON-LD via a dedicated CMS field
+  glossary-pattern.md                 ← glossary as a linked network: ownership, entry types, linking, schema (AEO)
+  glossary-sweep.md                   ← audit and clean up an existing glossary
+  glossary-positions-template.md      ← per-project decisions file (copy into the project)
   webflow-gotchas.md                  ← the gotchas with symptoms and fixes
   webflow-richtext-tables.md          ← HTML <table> in RichText (markdown tables don't work)
   vision-pipeline.md                  ← bulk content generation from binaries (alt text, summaries, categorization)
@@ -221,13 +226,16 @@ scripts/
   code_block_repair.py                ← code-block transforms: promote legacy blocks, add language- classes (library)
   push_template.py                    ← standalone runnable push script, edit config and run
   repair_template.py                  ← standalone runnable repair script (content-repair-pattern), edit config and run
+  snapshot_collections.py             ← read-only pull of CMS collections (items, text, links, references) into SQLite
+  audit_glossary.py                   ← offline glossary audit on a snapshot: links, duplicates, AEO shape, schema
+  glossary_schema.py                  ← DefinedTerm/FAQPage JSON-LD per entry, DefinedTermSet for the index (library + CLI)
 examples/
   minimal-example.md                  ← end-to-end walkthrough for 10 markdown files
 ```
 
 ## Rules
 
-1. Read only the reference(s) matching the user's task. Do not read all three upfront.
+1. Read only the reference(s) matching the user's task. Do not read every reference upfront.
 2. Follow the eight principles regardless of which pattern you're running.
 3. Verify visually after every push. The API will lie to you otherwise.
 4. One fix per fix-pass, never batch multiple fixes into a single pass.

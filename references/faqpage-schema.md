@@ -144,6 +144,7 @@ Same one-field + one-template-embed pattern works for any per-article secondary 
 | Product | `product-schema` | Product detail collection items | Ecommerce, SaaS comparison pages |
 | Review | `review-schema` | `<h2>Review</h2>` with rating + body | Product reviews, case studies |
 | BreadcrumbList | `breadcrumb-schema` | Derived from collection hierarchy | Multi-level CMS structures |
+| DefinedTerm (+ FAQPage) | `term-schema` | Answer block + FAQ section of a glossary entry | Glossaries; ready-made transform in `scripts/glossary_schema.py`, full setup in `references/glossary-pattern.md` |
 
 For each new schema type: repeat the three-step setup with that schema's field name, write a new transformer (body or source → JSON-LD), use the same `scripts/repair_template.py` harness to push.
 

@@ -37,6 +37,9 @@ references/
   fix-pass-pattern.md        # Editorial sweep workflow (10+ items)
   content-repair-pattern.md  # Shape repair on stored CMS field values (legacy markup migration)
   faqpage-schema.md          # FAQPage and other secondary JSON-LD via a dedicated CMS field
+  glossary-pattern.md        # Glossary as a linked network (AEO): ownership, entry types, linking, schema
+  glossary-sweep.md          # Audit and clean up an existing glossary
+  glossary-positions-template.md # Per-project decisions file for a glossary (copied into the project)
   vision-pipeline.md         # Vision batch generation (alt text, summaries)
   multi-image-alt-text.md    # End-to-end alt-text pipeline for multi-image fields + copy-paste local runbook
   webflow-gotchas.md         # known failure modes with fixes
@@ -47,6 +50,9 @@ scripts/
   code_block_repair.py       # Pure code-block transforms — promote legacy code blocks, add language- classes (library)
   push_template.py           # Standalone push script (edit CONFIG block then run)
   repair_template.py         # Standalone repair script (content-repair-pattern); edit CONFIG block then run
+  snapshot_collections.py    # Read-only snapshot of CMS collections into SQLite (CLI)
+  audit_glossary.py          # Offline glossary audit on a snapshot DB (CLI)
+  glossary_schema.py         # DefinedTerm/FAQPage JSON-LD (library, repair transform, DefinedTermSet CLI)
 examples/
   minimal-example.md         # End-to-end walkthrough for 10 markdown files
 ```
@@ -84,6 +90,9 @@ Choose pattern by batch size:
 
 ### Multi-Image Alt Text (multi-image-alt-text.md)
 End-to-end, project-agnostic pipeline for alt text on a multi-image/gallery (or single Image) field: discover IDs → pull field to SQLite → caption each image with vision → review gate → push (spread `**img`, override only `alt`, preserve `fileId`/`url`/order) → publish. Ships a copy-paste local runbook. Run locally when a sandbox blocks Webflow's asset CDN; use site-level publish when a duplicated site rejects item-publish with `Invalid locale`.
+
+### Glossary (glossary-pattern.md, glossary-sweep.md)
+A glossary is a linked network: one owner per concept, other entries link it instead of re-explaining. Build: research terms → clusters, umbrellas, synonyms, splits → ownership map before any draft → project positions file → write → push (POST drafts, then related-terms IDs, publish the cluster together) → DefinedTerm/FAQPage schema via `repair_template.py` + `glossary_schema.make_transform` → link back from the site once live. Audit: `snapshot_collections.py` → `audit_glossary.py` → topic lanes → change table → approval → execute per cluster. Project-specific decisions live in a copy of `glossary-positions-template.md` in the project, never in this repo.
 
 ### Session Handoff (session-handoff.md)
 Split heavy batches across two chat sessions when the 32MB request cap is near. Worker reads `.handoff/task.md`, writes progress to `.handoff/progress.md`, outputs to `.handoff/results.json`.
